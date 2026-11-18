@@ -10,7 +10,7 @@
    - 不抓右侧聊天框 DOM 重绘，而是由扩展后台 Service Worker 分别直连：
      - **B 站**：`getDanmuInfo` (WBI) + `wss://*.chat.bilibili.com/sub`（Deflate）
      - **Kick**：`web.kick.com/api/v1/realtime/connection` (Centrifugo) + Pusher WebSocket 自愈回退（`34bf7a0ff419a2a775b9` / `chatrooms.<id>.v2`）+ 页面 WebSocket 实况镜像 + 7TV 全局/频道表情（含 zero-width 叠层）+ Tenor/Giphy GIF + 房管删帖墓碑过滤（`: Deleted by a moderator` 等）
-     - **抖音**：`webcastSign` 签名 + `wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/`（Gzip + Protobuf，`need_persist_msg_count=0` 不拉历史），支持 `live.douyin.com/<rid>` 与 `www.douyin.com/follow/live/<rid>` 直播间路由，并自动避让抖音短视频页不误挂载。
+     - **抖音**：`webcastSign` 签名 + `wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/`（Gzip + Protobuf，`need_persist_msg_count=0` 不拉历史），完整内置并自动刷新抖音 214 个官方系统小黄脸表情（如 `[捂脸]`/`[流泪]`/`[比心]`）+ `rtfContent` 富文本内嵌图 + 表情贴纸；支持 `live.douyin.com/<rid>` 与 `www.douyin.com/follow/live/<rid>` 直播间路由，并自动避让抖音短视频页不误挂载。
    - 全局 `platform:msgId` 去重（5000 条 LRU）+ 建连前时间戳过滤，每条实时弹幕只飞一次。
 
 2. **B 站级清爽轨道控制与三端聊天窗 (`📋 聊天窗`)**

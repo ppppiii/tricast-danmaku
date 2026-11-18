@@ -2,10 +2,15 @@
 
 import { buildDouyinWsSignature } from '../protocols/hash-sign.mjs';
 import {
+  DEFAULT_DOUYIN_EMOJIS,
+  parseDouyinEmojiListResponse,
+} from '../protocols/douyin-emojis.mjs';
+import {
   pbEncode,
   decodeDouyinFrame,
   parseDouyinRoomHtml,
   extractDouyinWebRid,
+  safeDouyinImageUrl,
 } from '../protocols/douyin-protocol.mjs';
 
 const DOUYIN_WS_HOSTS = [
@@ -14,11 +19,41 @@ const DOUYIN_WS_HOSTS = [
   'webcast5-ws-web-lf',
 ];
 
+const DOUYIN_EMOJI_LIST_URL =
+  'https://www.douyin.com/aweme/v1/web/emoji/list?device_platform=webapp&aid=6383&channel=channel_pc_web&version_code=170400&version_name=17.4.0';
+
 export function createDouyinClient({
   fetchFn = fetch,
   tabs = typeof chrome !== 'undefined' ? chrome.tabs : null,
   scripting = typeof chrome !== 'undefined' ? chrome.scripting : null,
 } = {}) {
+  let emojiMap = { ...DEFAULT_DOUYIN_EMOJIS };
+  let emojiLoadedAt = 0;
+  let emojiInflight = null;
+
+  async function refreshDouyinEmojis() {
+    if (Date.now() - emojiLoadedAt < 6 * 3600 * 1000) return emojiMap;
+    if (emojiInflight) return emojiInflight;
+    emojiInflight = (async () => {
+      try {
+        const res = await fetchFn(DOUYIN_EMOJI_LIST_URL, {
+          credentials: 'omit',
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res?.ok) return emojiMap;
+        const json = await res.json();
+        const parsed = parseDouyinEmojiListResponse(json, safeDouyinImageUrl);
+        if (Object.keys(parsed).length) {
+          emojiMap = { ...DEFAULT_DOUYIN_EMOJIS, ...parsed };
+          emojiLoadedAt = Date.now();
+        }
+      } catch {}
+      return emojiMap;
+    })().finally(() => {
+      emojiInflight = null;
+    });
+    return emojiInflight;
+  }
   async function resolveRoomViaOpenTab(webRid) {
     if (!tabs?.query || !scripting?.executeScript) return null;
     try {
@@ -164,6 +199,7 @@ export function createDouyinClient({
 
       try {
         updateStatus('connecting', '正在连接抖音弹幕…');
+        refreshDouyinEmojis().catch(() => {});
         const info = await resolveRoom(webRid);
         if (closed || rev !== revision) return;
         if (info.status != null && info.status !== 2) {
@@ -229,7 +265,7 @@ export function createDouyinClient({
           }
           serial = serial
             .then(async () => {
-              const decoded = await decodeDouyinFrame(event.data, Date.now());
+              const decoded = await decodeDouyinFrame(event.data, Date.now(), emojiMap);
               if (!isCurrent()) return;
               lastReply = Date.now();
               if (!ready) {

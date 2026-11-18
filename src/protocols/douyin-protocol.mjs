@@ -1,5 +1,7 @@
 // Bounded Protobuf + Gzip decoder for Douyin Live Webcast WS frames & HTML room extractor.
 
+import { DEFAULT_DOUYIN_EMOJIS, tokenizeDouyinTextWithEmojis } from './douyin-emojis.mjs';
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
@@ -171,7 +173,62 @@ function extractDouyinCreateTimeMs(commonObj, fallbackMs) {
   return num > 1e12 ? num : num > 1e9 ? num * 1000 : fallbackMs;
 }
 
-export async function decodeDouyinFrame(data, receivedAt = Date.now()) {
+function parseDouyinRtfPieces(rtfBytes, emojiMap = DEFAULT_DOUYIN_EMOJIS) {
+  if (!(rtfBytes instanceof Uint8Array) || !rtfBytes.length) return null;
+  let rtfObj;
+  try {
+    rtfObj = pbDecode(rtfBytes);
+  } catch {
+    return null;
+  }
+  const pieces = rtfObj[4] || [];
+  if (!pieces.length) return null;
+
+  const segments = [];
+  let foundImage = false;
+  for (const rawPiece of pieces) {
+    if (!(rawPiece instanceof Uint8Array)) continue;
+    let piece;
+    try {
+      piece = pbDecode(rawPiece);
+    } catch {
+      continue;
+    }
+    const imageBytes = pbFirst(piece, 8);
+    if (imageBytes instanceof Uint8Array) {
+      const imgUrl = extractTrustedDouyinImages(imageBytes)[0];
+      if (imgUrl) {
+        segments.push({ type: 'emote', url: imgUrl, alt: '[抖音表情]' });
+        foundImage = true;
+      }
+      continue;
+    }
+    const userBytes = pbFirst(piece, 4);
+    if (userBytes instanceof Uint8Array) {
+      try {
+        const uWrap = pbDecode(userBytes);
+        const uInnerBytes = pbFirst(uWrap, 1);
+        const uInner = uInnerBytes instanceof Uint8Array ? pbDecode(uInnerBytes) : null;
+        const nick = uInner ? pbText(uInner, 3).trim() : '';
+        if (nick) {
+          segments.push({ type: 'text', text: `@${nick} ` });
+          continue;
+        }
+      } catch {}
+    }
+    const str = pbText(piece, 3);
+    if (str) {
+      segments.push(...tokenizeDouyinTextWithEmojis(str, emojiMap));
+    }
+  }
+  return foundImage && segments.length ? segments : null;
+}
+
+export async function decodeDouyinFrame(
+  data,
+  receivedAt = Date.now(),
+  emojiMap = DEFAULT_DOUYIN_EMOJIS,
+) {
   const frame = pbDecode(data);
   const payload = pbFirst(frame, 8);
   if (!payload?.length) return { messages: [], ack: null };
@@ -217,15 +274,22 @@ export async function decodeDouyinFrame(data, receivedAt = Date.now()) {
       const uname = pbText(user, 3).slice(0, 100).trim() || '抖音观众';
       const uid = String(pbFirst(user, 1) ?? '');
       const color = normalizeColor(pbText(chat, 6));
-      const rtfBytes = pbFirst(chat, 15);
-      const inlineImages = rtfBytes instanceof Uint8Array ? extractTrustedDouyinImages(rtfBytes) : [];
-      if (!text && !inlineImages.length) continue;
-
-      const segments = [];
-      if (text) segments.push({ type: 'text', text });
-      for (const imgUrl of inlineImages) {
-        segments.push({ type: 'emote', url: imgUrl, alt: '[抖音表情]' });
+      const rtfBytes = [pbFirst(chat, 22), pbFirst(chat, 23), pbFirst(chat, 15)].find(
+        (v) => v instanceof Uint8Array,
+      );
+      let segments = rtfBytes ? parseDouyinRtfPieces(rtfBytes, emojiMap) : null;
+      if (!segments) {
+        segments = text ? tokenizeDouyinTextWithEmojis(text, emojiMap) : [];
+        const inlineImages = rtfBytes ? extractTrustedDouyinImages(rtfBytes) : [];
+        const existingUrls = new Set(segments.map((s) => s.url).filter(Boolean));
+        for (const imgUrl of inlineImages) {
+          if (!existingUrls.has(imgUrl)) {
+            segments.push({ type: 'emote', url: imgUrl, alt: '[抖音表情]' });
+          }
+        }
       }
+      const hasMedia = segments.some((s) => s.type !== 'text');
+      if (!text && !hasMedia) continue;
 
       messages.push({
         platform: 'douyin',
@@ -235,7 +299,7 @@ export async function decodeDouyinFrame(data, receivedAt = Date.now()) {
         color,
         text: text || '[表情]',
         sendText: text,
-        hasMedia: inlineImages.length > 0,
+        hasMedia,
         hasGif: false,
         segments,
         createdAtMs: extractDouyinCreateTimeMs(common, receivedAt),

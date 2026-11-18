@@ -3,7 +3,7 @@
 
   if (location.hash === '#tcd-bg-send') return;
   if (document.documentElement.hasAttribute('data-tcd-running')) return;
-  document.documentElement.setAttribute('data-tcd-running', '1.1.0');
+  document.documentElement.setAttribute('data-tcd-running', '1.1.1');
 
   const TCD = globalThis.__TCD__;
   if (!TCD) return;

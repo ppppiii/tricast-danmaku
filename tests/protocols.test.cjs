@@ -203,6 +203,90 @@ test('douyin-protocol decodes gzipped PushFrame ChatMessage + EmojiChatMessage +
   assert.equal(flightMeta.userUniqueId, '7311111111111111111');
 });
 
+test('douyin-emojis renders 214 official inline shortcodes ([捂脸] etc.) and field 22 rtfContent pieces', async () => {
+  const { DEFAULT_DOUYIN_EMOJIS, parseDouyinEmojiListResponse, tokenizeDouyinTextWithEmojis } = await loadEsm(
+    'src/protocols/douyin-emojis.mjs',
+  );
+  const { pbEncode, decodeDouyinFrame } = await loadEsm('src/protocols/douyin-protocol.mjs');
+
+  assert.ok(Object.keys(DEFAULT_DOUYIN_EMOJIS).length >= 200);
+  assert.match(DEFAULT_DOUYIN_EMOJIS['[捂脸]'], /^https:\/\/.*douyinpic\.com\//);
+  assert.match(DEFAULT_DOUYIN_EMOJIS['[流泪]'], /^https:\/\/.*douyinpic\.com\//);
+  assert.match(DEFAULT_DOUYIN_EMOJIS['[比心]'], /^https:\/\/.*douyinpic\.com\//);
+
+  const parsedApi = parseDouyinEmojiListResponse({
+    emoji_list: [
+      { display_name: '[捂脸]', emoji_url: { url_list: ['https://p3-pc-sign.douyinpic.com/obj/wulian.webp'] } },
+      { display_name: '[恶意]', emoji_url: { url_list: ['https://evil.example.com/x.png'] } },
+    ],
+  });
+  assert.equal(parsedApi['[捂脸]'], 'https://p3-pc-sign.douyinpic.com/obj/wulian.webp');
+  assert.equal(parsedApi['[恶意]'], undefined);
+
+  const tok = tokenizeDouyinTextWithEmojis('笑死我了[捂脸][比心][普通括号]');
+  assert.deepEqual(
+    tok.map((s) => [s.type, s.alt || s.text]),
+    [
+      ['text', '笑死我了'],
+      ['emote', '[捂脸]'],
+      ['emote', '[比心]'],
+      ['text', '[普通括号]'],
+    ],
+  );
+
+  // Verify real protobuf WebcastChatMessage with uint64 eventTime=15 + content="[捂脸]" + rtfContent field 22
+  const common = pbEncode([[4, 1700000010]]);
+  const user = pbEncode([
+    [1, 99001133],
+    [3, '捂脸水友'],
+  ]);
+  const chatShortcode = pbEncode([
+    [1, common],
+    [2, user],
+    [3, '哈哈哈[捂脸][普通括号]'],
+    [15, 1700000010], // real Douyin eventTime is varint, not bytes!
+  ]);
+  const rtfPieceText = pbEncode([[3, '前排 '], [1, 1]]);
+  const rtfPieceImg = pbEncode([
+    [8, pbEncode([[1, pbEncode([[1, 'https://p3.douyinpic.com/obj/badge.png']])]])],
+  ]);
+  const rtfTextMsg = pbEncode([
+    [1, 'chat'],
+    [4, rtfPieceText],
+    [4, rtfPieceImg],
+  ]);
+  const chatRtf22 = pbEncode([
+    [1, common],
+    [2, user],
+    [3, '前排'],
+    [15, 1700000011],
+    [22, rtfTextMsg],
+  ]);
+
+  const respBytes = pbEncode([
+    [1, pbEncode([[1, 'WebcastChatMessage'], [2, chatShortcode], [3, 888001]])],
+    [1, pbEncode([[1, 'WebcastChatMessage'], [2, chatRtf22], [3, 888002]])],
+  ]);
+  const frame = pbEncode([[8, zlib.gzipSync(Buffer.from(respBytes))]]);
+  const decoded = await decodeDouyinFrame(frame, 1700000010500);
+  assert.equal(decoded.messages.length, 2);
+
+  const m1 = decoded.messages[0];
+  assert.equal(m1.hasMedia, true);
+  assert.equal(m1.sendText, '哈哈哈[捂脸][普通括号]');
+  assert.equal(m1.segments[1].type, 'emote');
+  assert.equal(m1.segments[1].alt, '[捂脸]');
+  assert.equal(m1.segments[1].url, DEFAULT_DOUYIN_EMOJIS['[捂脸]']);
+  assert.equal(m1.segments[2].type, 'text');
+  assert.equal(m1.segments[2].text, '[普通括号]');
+
+  const m2 = decoded.messages[1];
+  assert.equal(m2.hasMedia, true);
+  assert.equal(m2.segments[0].text, '前排 ');
+  assert.equal(m2.segments[1].type, 'emote');
+  assert.equal(m2.segments[1].url, 'https://p3.douyinpic.com/obj/badge.png');
+});
+
 test('kick-protocol decodes Centrifugo ping/replies/publications and Pusher 4001 error', async () => {
   const { parseKickPusherFrame, parseKickCentrifugoFrames, ingest7tvEmoteSet, isDeletedPlaceholder } = await loadEsm(
     'src/protocols/kick-protocol.mjs',
