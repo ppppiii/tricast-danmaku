@@ -75,7 +75,10 @@ export function createTabSender(browser = chrome) {
           : ['https://kick.com/*', 'https://*.kick.com/*'];
       const openTabs = await browser.tabs.query({ url: pattern });
       const existingUserTab = openTabs.find(
-        (t) => t.id !== ownerTabId && urlMatchesRoom(t.url, platform, room, targetUrl),
+        (t) =>
+          t.id !== ownerTabId &&
+          !String(t.url || '').includes('#tcd-bg-send') &&
+          urlMatchesRoom(t.url, platform, room, targetUrl),
       );
       if (existingUserTab) {
         return { tab: existingUserTab, owned: false, targetUrl };
@@ -128,7 +131,7 @@ export function createTabSender(browser = chrome) {
       });
     } catch {}
 
-    await browser.tabs.update(tab.id, { url: targetUrl });
+    await browser.tabs.update(tab.id, { url: `${targetUrl}#tcd-bg-send` });
     return { tab, owned: true, targetUrl };
   }
 

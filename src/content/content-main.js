@@ -1,11 +1,15 @@
 (() => {
   'use strict';
 
+  if (location.hash === '#tcd-bg-send') return;
   if (document.documentElement.hasAttribute('data-tcd-running')) return;
-  document.documentElement.setAttribute('data-tcd-running', '1.0.1');
+  document.documentElement.setAttribute('data-tcd-running', '1.1.0');
 
   const TCD = globalThis.__TCD__;
   if (!TCD) return;
+
+  const SUPPORTED_SITES = ['bilibili', 'kick', 'douyin'];
+  const PLAT_LABELS = { bilibili: 'B站', kick: 'Kick', douyin: '抖音' };
 
   const store = TCD.state.createStore();
   let rooms = TCD.state.sanitizeRooms(null);
@@ -28,7 +32,7 @@
 
   async function syncSiteRoomOnNavigate() {
     const info = hostMount.getSiteInfo();
-    if (!['bilibili', 'kick'].includes(info.site) || !info.room) {
+    if (!SUPPORTED_SITES.includes(info.site) || !info.room) {
       return;
     }
     const stored = await TCD.state.readData(TCD.state.STORAGE_KEYS.rooms, null);
@@ -74,12 +78,18 @@
       return { ok: false, error: `尚未配置 ${targetPlat} 直播间号，请先在「融合房间」填写` };
     }
 
-    // If sending to Kick while actively viewing that same Kick channel tab, submit directly in DOM (zero background tab)
+    // If sending to Kick or Douyin while actively viewing that same room tab, submit directly in DOM (zero background tab)
     if (targetPlat === 'kick' && siteInfo.site === 'kick' && siteInfo.room === targetRoom) {
       try {
         await chrome.runtime.sendMessage({ type: 'tcd:remember-self', platform: 'kick', text: clean });
       } catch {}
       return TCD.hostMount.submitKickLocalChat(clean, document);
+    }
+    if (targetPlat === 'douyin' && siteInfo.site === 'douyin' && siteInfo.room === targetRoom) {
+      try {
+        await chrome.runtime.sendMessage({ type: 'tcd:remember-self', platform: 'douyin', text: clean });
+      } catch {}
+      return TCD.hostMount.submitDouyinLocalChat(clean, document);
     }
 
     return chrome.runtime.sendMessage({
@@ -161,6 +171,7 @@
       shadowRoot,
       store,
       danmakuLayout,
+      chatContent: TCD.chatContent,
       getRooms: () => rooms,
       onSaveRooms: saveRooms,
       onReconnect: () => {
@@ -171,6 +182,23 @@
         }
       },
       onSendChat: sendToPlatform,
+      onRepeatFeed: async (msg) => {
+        const res = await sendToPlatform({
+          platform: msg.platform,
+          text: msg.sendText || msg.text,
+        });
+        if (res?.ok) {
+          panelUi?.notice(`已往 ${PLAT_LABELS[msg.platform] || msg.platform} +1`);
+        } else {
+          panelUi?.notice(
+            res?.error || '发送失败',
+            true,
+            res?.needsPage && Number.isInteger(res?.tabId)
+              ? { label: '去登录/验证 ↗', onClick: () => revealSendTab(res.tabId) }
+              : null,
+          );
+        }
+      },
       onRevealTab: revealSendTab,
       onPanelToggle: (open) => {
         if (open) hostMount.wakeTrigger();
@@ -192,7 +220,7 @@
     }
 
     const siteInfo = hostMount.getSiteInfo();
-    if (['bilibili', 'kick'].includes(siteInfo.site)) {
+    if (SUPPORTED_SITES.includes(siteInfo.site)) {
       panelUi.setSendTarget(siteInfo.site);
     }
     panelUi.populateRoomsDialog(rooms);
@@ -201,11 +229,13 @@
 
   function handleIncomingMessage(message) {
     if (!shadowRoot || !danmakuLayout || !panelUi) return;
+    if (!message || typeof message !== 'object') return;
+    if (chatBlocking?.isBlocked(message) || chatRules?.blocked(message)) return;
+
+    panelUi.appendChatFeed(message);
+
     const settings = store.get();
     if (!settings.showChat || document.hidden) return;
-    if (!message || typeof message !== 'object') return;
-
-    if (chatBlocking?.isBlocked(message) || chatRules?.blocked(message)) return;
 
     // 8s pure-text merge (emotes / stickers / GIFs are skipped by default when mergeTextOnly is true)
     const merged = chatRules?.merge(message);
@@ -242,7 +272,9 @@
   }
 
   function handleMessageDeleted(ids) {
-    if (!shadowRoot || !store.get().hideDeleted || !Array.isArray(ids)) return;
+    if (!store.get().hideDeleted || !Array.isArray(ids)) return;
+    panelUi?.removeChatFeedMessages(ids);
+    if (!shadowRoot) return;
     const overlay = shadowRoot.getElementById('danmaku');
     if (!overlay) return;
     for (const id of ids) {
@@ -253,10 +285,32 @@
   }
 
   function handleChatClear() {
-    if (!shadowRoot || !store.get().hideDeleted) return;
+    if (!store.get().hideDeleted) return;
+    panelUi?.clearChatFeed();
+    if (!shadowRoot) return;
     danmakuLayout?.clearQueue();
     shadowRoot.getElementById('danmaku')?.replaceChildren();
     chatRules?.reset();
+  }
+
+  function disconnectHub() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = 0;
+    if (port) {
+      try {
+        port.disconnect();
+      } catch {}
+      port = null;
+    }
+  }
+
+  function syncHubConnection() {
+    const info = hostMount.getSiteInfo();
+    if (SUPPORTED_SITES.includes(info.site) && info.room) {
+      connectHub();
+    } else {
+      disconnectHub();
+    }
   }
 
   function connectHub() {
@@ -264,7 +318,7 @@
     try {
       port = chrome.runtime.connect({ name: 'tcd-player' });
     } catch {
-      reconnectTimer = setTimeout(connectHub, 2000);
+      reconnectTimer = setTimeout(syncHubConnection, 2000);
       return;
     }
 
@@ -291,7 +345,7 @@
     port.onDisconnect.addListener(() => {
       port = null;
       clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(connectHub, 1500);
+      reconnectTimer = setTimeout(syncHubConnection, 1500);
     });
   }
 
@@ -307,6 +361,7 @@
     onResize: () => danmakuLayout?.layout(),
     onRouteChange: () => {
       syncSiteRoomOnNavigate();
+      syncHubConnection();
     },
     onWebFullscreenChange: (active) => {
       const btn = shadowRoot?.getElementById('tcdWebFullscreenBtn');
@@ -349,7 +404,7 @@
       .catch(() => {});
   });
 
-  // Keyboard shortcuts: Alt+D toggle, Alt+S settings, Alt+C quick send
+  // Keyboard shortcuts: Alt+D toggle, Alt+L chat feed, Alt+S settings, Alt+C quick send
   document.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const target = e.target;
@@ -369,6 +424,12 @@
         shadowRoot?.getElementById('danmaku')?.replaceChildren();
       }
       panelUi?.notice(next ? '已开启融合弹幕' : '已关闭融合弹幕');
+    } else if (code === 'KeyL') {
+      e.preventDefault();
+      hostMount.wakeTrigger();
+      const next = !store.get().showChatFeed;
+      store.update({ showChatFeed: next });
+      panelUi?.notice(next ? '已打开三端聊天窗' : '已关闭三端聊天窗');
     } else if (code === 'KeyS') {
       e.preventDefault();
       hostMount.wakeTrigger();
@@ -406,6 +467,6 @@
   store.load().then(async () => {
     await syncSiteRoomOnNavigate();
     hostMount.start();
-    connectHub();
+    syncHubConnection();
   });
 })();

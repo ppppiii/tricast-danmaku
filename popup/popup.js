@@ -20,6 +20,7 @@
     $('danmakuMaxCountVal').textContent = s.danmakuMaxCount <= 0 ? '不限' : s.danmakuMaxCount + ' 条';
 
     for (const id of [
+      'showChatFeed',
       'showPlatformBadge',
       'allowOverlap',
       'suppressNativeBili',
@@ -77,6 +78,7 @@
     });
 
     for (const id of [
+      'showChatFeed',
       'showPlatformBadge',
       'allowOverlap',
       'suppressNativeBili',
@@ -142,8 +144,8 @@
     }
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.url || !/^https:\/\/(?:live\.bilibili\.com|([^/]+\.)?kick\.com)\//i.test(tab.url)) {
-        statusEl.textContent = '请打开 B站直播 或 Kick 直播间';
+      if (!tab?.url || !/^https:\/\/(?:live\.bilibili\.com|([^/]+\.)?kick\.com|(?:live|www)\.douyin\.com)\//i.test(tab.url)) {
+        statusEl.textContent = '请打开 B站 / Kick / 抖音 直播间';
         $('openPlayerPanel').disabled = true;
         $('openRoomsPanelBtn').disabled = true;
         return;
@@ -151,8 +153,13 @@
       const res = await chrome.tabs.sendMessage(tab.id, { type: 'tcd:get-status' });
       if (res?.mounted) {
         statusEl.className = 'ok';
-        const siteLabel = res.siteInfo?.site === 'bilibili' ? 'B站页' : 'Kick页';
+        const siteNames = { bilibili: 'B站页', kick: 'Kick页', douyin: '抖音页' };
+        const siteLabel = siteNames[res.siteInfo?.site] || '直播页';
         statusEl.textContent = `已挂载 (${siteLabel}) · 同屏 ${res.activeBullets} 条`;
+      } else if (res?.siteInfo && !res.siteInfo.room) {
+        statusEl.textContent = '请进入 B站 / Kick / 抖音 直播间';
+        $('openPlayerPanel').disabled = true;
+        $('openRoomsPanelBtn').disabled = true;
       } else {
         statusEl.textContent = '等待播放器加载…';
       }

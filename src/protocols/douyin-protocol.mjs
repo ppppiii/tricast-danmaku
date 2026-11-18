@@ -371,6 +371,12 @@ const DOUYIN_RESERVED_SEGMENTS = new Set([
   'channel',
   'square',
   'search',
+  'video',
+  'note',
+  'user',
+  'collection',
+  'vs',
+  'series',
 ]);
 
 export function extractDouyinWebRid(raw) {
@@ -394,16 +400,17 @@ export function extractDouyinWebRid(raw) {
         return cand;
       }
     }
-    if (u.hostname.toLowerCase() === 'live.douyin.com' && parts.length) {
+    if (
+      u.hostname.toLowerCase() === 'live.douyin.com' &&
+      parts.length &&
+      !DOUYIN_RESERVED_SEGMENTS.has(parts[0].toLowerCase())
+    ) {
       for (let i = parts.length - 1; i >= 0; i--) {
         const seg = parts[i];
         if (/^[\w-]{3,64}$/.test(seg) && !DOUYIN_RESERVED_SEGMENTS.has(seg.toLowerCase())) {
           return seg;
         }
       }
-    }
-    for (const seg of parts) {
-      if (/^\d{5,24}$/.test(seg)) return seg;
     }
     return '';
   } catch {

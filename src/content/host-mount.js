@@ -12,6 +12,7 @@
   const POS_ATTR = 'data-tcd-pos';
   const WEBFS_ATTR = 'data-tcd-webfs';
   const HIDE_BILI_ATTR = 'data-tcd-hide-bili-dm';
+  const HIDE_DOUYIN_ATTR = 'data-tcd-hide-douyin-dm';
   const WEBFS_LOCK_CLASS = 'tcd-webfs-lock';
   const STYLE_ID = 'tcd-page-host-style';
 
@@ -22,6 +23,11 @@
     '#injected-channel-player',
     '[data-testid="player"]',
     '#injected-embedded-channel-player-video',
+    '[data-theatre-mode-container]',
+    '.douyin-player',
+    '.xgplayer',
+    '[data-e2e="living-container"]',
+    '.basicPlayer',
     '.video-player',
   ];
 
@@ -29,12 +35,16 @@
     const host = String(loc?.hostname || '').toLowerCase();
     const path = String(loc?.pathname || '');
     if (host === 'live.bilibili.com') {
-      const room = stateMod?.normalizeRoomInput?.('bilibili', `https://live.bilibili.com${path}`) || '';
+      const room = stateMod?.normalizeRoomInput?.('bilibili', loc?.href || `https://live.bilibili.com${path}`) || '';
       return { site: 'bilibili', room };
     }
     if (host === 'kick.com' || host.endsWith('.kick.com')) {
-      const room = stateMod?.normalizeRoomInput?.('kick', `https://kick.com${path}`) || '';
+      const room = stateMod?.normalizeRoomInput?.('kick', loc?.href || `https://kick.com${path}`) || '';
       return { site: 'kick', room };
+    }
+    if (host === 'live.douyin.com' || host === 'douyin.com' || host.endsWith('.douyin.com')) {
+      const room = stateMod?.normalizeRoomInput?.('douyin', loc?.href || `https://${host}${path}`) || '';
+      return { site: 'douyin', room };
     }
     return { site: 'generic', room: '' };
   }
@@ -43,7 +53,7 @@
     if (!video || !video.isConnected) return true;
     if (
       video.closest(
-        'nav, #chatroom, #channel-chatroom, [data-testid="chatroom"], #user-identity, #tcd-host, .aside-area',
+        'nav, aside, #chatroom, #channel-chatroom, [data-testid="chatroom"], [data-e2e="chatroom"], .webcast-chatroom, #user-identity, #tcd-host, .aside-area',
       )
     ) {
       return true;
@@ -91,7 +101,10 @@ html.${WEBFS_LOCK_CLASS}, html.${WEBFS_LOCK_CLASS} body {
   overflow: hidden !important;
 }
 html[${HIDE_BILI_ATTR}="1"] .web-player-danmaku,
-html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
+html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container,
+html[${HIDE_DOUYIN_ATTR}="1"] xg-danmu,
+html[${HIDE_DOUYIN_ATTR}="1"] .xgplayer-danmu,
+html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -111,7 +124,7 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
     }
     if (cs.display === 'contents' || cs.display === 'none') return false;
     const r = el.getBoundingClientRect();
-    return r.width >= videoRect.width - 4 && r.height >= videoRect.height - 4 && r.width > 0 && r.height > 0;
+    return r.width >= videoRect.width - 12 && r.height >= videoRect.height - 12 && r.width > 0 && r.height > 0;
   }
 
   function findPlayerHost(video, doc = document, win = window) {
@@ -164,7 +177,16 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
   }
 
   function findFallbackBox(doc = document, win = window) {
-    for (const sel of ['#live-player', '.live-player-mounter', '#injected-channel-player', '[data-testid="player"]']) {
+    const fallbackSelectors = [
+      '#live-player',
+      '.live-player-mounter',
+      '#injected-channel-player',
+      '[data-testid="player"]',
+      '.douyin-player',
+      '.xgplayer',
+      '[data-e2e="living-container"]',
+    ];
+    for (const sel of fallbackSelectors) {
       const el = doc.querySelector(sel);
       if (!el) continue;
       const r = el.getBoundingClientRect();
@@ -181,66 +203,175 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
     return null;
   }
 
-  // Submit directly in current Kick page Lexical composer (zero extra tabs)
-  async function submitKickLocalChat(text, doc = document) {
+  function isElVisible(el) {
+    if (!el || !el.isConnected) return false;
+    if (typeof el.getClientRects === 'function' && el.getClientRects().length === 0) return false;
+    try {
+      return getComputedStyle(el).visibility !== 'hidden';
+    } catch {
+      return true;
+    }
+  }
+
+  function readComposerValue(el) {
+    if (!el) return '';
+    const raw =
+      'value' in el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')
+        ? el.value
+        : el.innerText || el.textContent || '';
+    return String(raw || '').replace(/\u200B/g, '').trim();
+  }
+
+  async function submitLocalComposerChat({
+    text,
+    doc = document,
+    platformLabel = '当前直播间',
+    inputSelectors = [],
+    sendButtonSelectors = [],
+    waitMs = 120,
+    allowGenericFallback = false,
+  }) {
     const clean = String(text || '').trim();
     if (!clean) return { ok: false, error: '弹幕内容为空' };
 
-    const selectors = [
-      '[data-testid="chat-input"]',
-      '.editor-input[contenteditable]',
-      '#chatroom-footer div[contenteditable="true"]',
-      'div[contenteditable="true"][role="textbox"]',
-    ];
     let field = null;
-    for (const sel of selectors) {
-      const el = doc.querySelector(sel);
-      if (el) {
-        field = el;
+    for (const sel of inputSelectors) {
+      const hit = Array.from(doc.querySelectorAll(sel)).find(isElVisible);
+      if (hit) {
+        field = hit;
         break;
       }
     }
-    if (!field) return { ok: false, error: '未找到 Kick 聊天输入框，请检查是否已登录' };
-    if (field.getAttribute?.('contenteditable') === 'false' || field.disabled) {
-      return { ok: false, error: '当前 Kick 聊天不可输入（可能未登录或受限）' };
+    if (!field && allowGenericFallback) {
+      field = Array.from(
+        doc.querySelectorAll('textarea, [contenteditable="true"], [contenteditable="plaintext-only"]'),
+      ).find(
+        (el) =>
+          isElVisible(el) &&
+          /说点|聊天|弹幕|send a message|chat/i.test(
+            [el.getAttribute('placeholder'), el.getAttribute('data-placeholder'), el.getAttribute('aria-label')].join(' '),
+          ),
+      );
     }
-    const existing = (field.innerText || field.textContent || '').replace(/\u200B/g, '').trim();
+
+    if (!field) return { ok: false, error: `未找到 ${platformLabel} 聊天输入框，请检查是否已登录` };
+    if (field.getAttribute?.('contenteditable') === 'false' || field.disabled) {
+      return { ok: false, error: `当前 ${platformLabel} 聊天不可输入（可能未登录或受限）` };
+    }
+    const existing = readComposerValue(field);
     if (existing && existing !== clean) {
-      return { ok: false, error: 'Kick 聊天框已有未发送草稿，未覆盖' };
+      return { ok: false, error: `${platformLabel} 聊天框已有未发送草稿，未覆盖` };
     }
 
     field.focus();
-    let inserted = false;
-    try {
-      const sel = typeof getSelection === 'function' ? getSelection() : null;
-      if (sel && doc.createRange) {
-        const range = doc.createRange();
-        range.selectNodeContents(field);
-        sel.removeAllRanges();
-        sel.addRange(range);
+    if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
+      const proto = field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(field, clean);
+      else field.value = clean;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      let inserted = false;
+      try {
+        const sel = typeof getSelection === 'function' ? getSelection() : null;
+        if (sel && doc.createRange) {
+          const range = doc.createRange();
+          range.selectNodeContents(field);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        inserted = doc.execCommand?.('insertText', false, clean) || false;
+      } catch {
+        inserted = false;
       }
-      inserted = doc.execCommand?.('insertText', false, clean) || false;
-    } catch {
-      inserted = false;
-    }
-    if (!inserted || !(field.innerText || field.textContent || '').trim()) {
-      field.textContent = clean;
-      field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: clean }));
+      if (!inserted || !readComposerValue(field)) {
+        try {
+          field.dispatchEvent(
+            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: clean }),
+          );
+        } catch {}
+        if (!readComposerValue(field)) field.textContent = clean;
+        field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: clean }));
+      }
     }
 
-    await new Promise((r) => setTimeout(r, 120));
-    const btn =
-      doc.querySelector('#send-message-button') ||
-      doc.querySelector('[data-testid="send-message-button"]') ||
-      field.closest('form')?.querySelector('button[type="submit"]');
-    if (btn && (btn.disabled || btn.getAttribute('aria-disabled') === 'true')) {
-      return { ok: false, error: 'Kick 发送按钮不可用' };
+    await new Promise((r) => setTimeout(r, waitMs));
+    let btn = null;
+    for (const sel of sendButtonSelectors) {
+      const hit = Array.from(doc.querySelectorAll(sel)).find(isElVisible);
+      if (hit) {
+        btn = hit;
+        break;
+      }
+    }
+    if (!btn) {
+      btn = field.closest('form')?.querySelector('button[type="submit"]') || null;
+    }
+    if (!btn) {
+      let node = field.parentElement;
+      for (let d = 0; node && d < 5; d++, node = node.parentElement) {
+        const hit = Array.from(node.querySelectorAll('button, [role="button"]')).find(
+          (b) => isElVisible(b) && /^(?:发送|chat|send)$/i.test((b.textContent || '').trim()),
+        );
+        if (hit) {
+          btn = hit;
+          break;
+        }
+      }
+    }
+
+    if (
+      btn &&
+      (btn.disabled ||
+        btn.getAttribute('aria-disabled') === 'true' ||
+        /(?:^|[\s_-])disabled(?:[\s_-]|$)/i.test(btn.className || ''))
+    ) {
+      return { ok: false, error: `${platformLabel} 发送按钮不可用` };
     }
     if (btn) btn.click();
     else {
       field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
     }
     return { ok: true };
+  }
+
+  // Submit directly in current Kick page Lexical composer (zero extra tabs)
+  function submitKickLocalChat(text, doc = document) {
+    return submitLocalComposerChat({
+      text,
+      doc,
+      platformLabel: 'Kick',
+      inputSelectors: [
+        '[data-testid="chat-input"]',
+        '.editor-input[contenteditable]',
+        '#chatroom-footer div[contenteditable="true"]',
+        'div[contenteditable="true"][role="textbox"]',
+      ],
+      sendButtonSelectors: ['#send-message-button', '[data-testid="send-message-button"]'],
+      waitMs: 120,
+    });
+  }
+
+  // Submit directly in current Douyin live chat composer (zero extra tabs)
+  function submitDouyinLocalChat(text, doc = document) {
+    return submitLocalComposerChat({
+      text,
+      doc,
+      platformLabel: '抖音',
+      inputSelectors: [
+        '[data-e2e="chat-input"][contenteditable]',
+        '[data-e2e="chat-input"] [contenteditable]',
+        '[data-e2e="chat-input"] textarea',
+        '.webcast-chatroom___textarea',
+        'textarea[placeholder*="说点"]',
+        'textarea[placeholder*="聊天"]',
+        '[contenteditable="true"][data-placeholder*="说点"]',
+      ],
+      sendButtonSelectors: ['[data-e2e="chat-send-button"]', '.webcast-chatroom___send-btn'],
+      waitMs: 100,
+      allowGenericFallback: true,
+    });
   }
 
   function createHostMount(options = {}) {
@@ -265,6 +396,7 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
     let triggerTimer = 0;
     let paused = false;
     let webFullscreen = false;
+    let suppressPref = false;
     let lastHref = win?.location?.href || '';
 
     function createHost() {
@@ -287,21 +419,32 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
       triggerTimer = setTimeout(() => {
         const panel = shadowRoot?.getElementById('danmakuSettings');
         const sendBar = shadowRoot?.getElementById('tcdSendBar');
-        if ((panel && !panel.hidden) || (sendBar && !sendBar.hidden)) return;
+        const chatFeed = shadowRoot?.getElementById('tcdChatFeed');
+        if ((panel && !panel.hidden) || (sendBar && !sendBar.hidden) || (chatFeed && !chatFeed.hidden)) return;
         player.classList.remove('tcd-show-trigger');
         player.classList.add('tcd-controls-hidden');
       }, 2800);
     }
 
-    function setNativeDanmakuSuppressed(enabled) {
+    function applyNativeSuppression() {
       if (!doc?.documentElement) return;
-      const { site } = detectHostSite(win?.location);
-      if (site === 'bilibili' && enabled) {
+      doc.documentElement.removeAttribute(HIDE_BILI_ATTR);
+      doc.documentElement.removeAttribute(HIDE_DOUYIN_ATTR);
+      if (!suppressPref) return;
+      const { site, room } = detectHostSite(win?.location);
+      if (!room) return;
+      if (site === 'bilibili') {
         ensurePageStyle(doc);
         doc.documentElement.setAttribute(HIDE_BILI_ATTR, '1');
-      } else {
-        doc.documentElement.removeAttribute(HIDE_BILI_ATTR);
+      } else if (site === 'douyin') {
+        ensurePageStyle(doc);
+        doc.documentElement.setAttribute(HIDE_DOUYIN_ATTR, '1');
       }
+    }
+
+    function setNativeDanmakuSuppressed(enabled) {
+      suppressPref = Boolean(enabled);
+      applyNativeSuppression();
     }
 
     function updatePausedState() {
@@ -386,11 +529,39 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
       }
     }
 
+    function unmountActiveHost() {
+      if (webFullscreen) setWebFullscreen(false);
+      doc?.documentElement?.removeAttribute(HIDE_BILI_ATTR);
+      doc?.documentElement?.removeAttribute(HIDE_DOUYIN_ATTR);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
+      attachVideoListeners(null);
+      if (currentHostEl) {
+        currentHostEl.removeEventListener('pointermove', onPointerMove);
+        currentHostEl.removeEventListener('pointerenter', onPointerMove);
+        currentHostEl.removeEventListener('pointerdown', onPointerMove);
+        currentHostEl.removeEventListener('touchstart', onPointerMove);
+        currentHostEl.removeAttribute(WEBFS_ATTR);
+        currentHostEl = null;
+      }
+      if (host && host.isConnected) {
+        host.remove();
+      }
+    }
+
     function syncMount() {
       if (!doc) return false;
+      const siteInfo = detectHostSite(win?.location);
       if (win?.location?.href && win.location.href !== lastHref) {
         lastHref = win.location.href;
-        onRouteChange(detectHostSite(win.location));
+        onRouteChange(siteInfo);
+      }
+
+      if (!siteInfo.room) {
+        unmountActiveHost();
+        return false;
       }
 
       const video = findStreamVideo(doc);
@@ -409,6 +580,7 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
       } else if (currentHostEl !== targetHost) {
         attachHostListeners(targetHost);
       }
+      applyNativeSuppression();
       return true;
     }
 
@@ -439,26 +611,13 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
     function stop() {
       clearInterval(checkTimer);
       clearTimeout(triggerTimer);
-      if (webFullscreen) setWebFullscreen(false);
       setNativeDanmakuSuppressed(false);
       doc?.removeEventListener('fullscreenchange', onViewportChange);
       doc?.removeEventListener('webkitfullscreenchange', onViewportChange);
       doc?.removeEventListener('keydown', onKeyDown);
       win?.removeEventListener('resize', onViewportChange);
-      if (resizeObserver) resizeObserver.disconnect();
-      attachVideoListeners(null);
-      if (currentHostEl) {
-        currentHostEl.removeEventListener('pointermove', onPointerMove);
-        currentHostEl.removeEventListener('pointerenter', onPointerMove);
-        currentHostEl.removeEventListener('pointerdown', onPointerMove);
-        currentHostEl.removeEventListener('touchstart', onPointerMove);
-        currentHostEl.removeAttribute(WEBFS_ATTR);
-        currentHostEl = null;
-      }
-      if (host) {
-        host.remove();
-        host = null;
-      }
+      unmountActiveHost();
+      host = null;
       shadowRoot = null;
     }
 
@@ -483,6 +642,7 @@ html[${HIDE_BILI_ATTR}="1"] .danmaku-item-container {
     findStreamVideo,
     findPlayerHost,
     submitKickLocalChat,
+    submitDouyinLocalChat,
     createHostMount,
   };
 });

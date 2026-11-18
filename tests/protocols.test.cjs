@@ -103,9 +103,20 @@ test('bili-protocol decodes protover=2 deflated DANMU_MSG with inline emotes and
 });
 
 test('douyin-protocol decodes gzipped PushFrame ChatMessage + EmojiChatMessage + ack + HTML roomId', async () => {
-  const { pbEncode, decodeDouyinFrame, parseDouyinRoomHtml } = await loadEsm(
+  const { pbEncode, decodeDouyinFrame, parseDouyinRoomHtml, extractDouyinWebRid } = await loadEsm(
     'src/protocols/douyin-protocol.mjs',
   );
+
+  assert.equal(extractDouyinWebRid('https://live.douyin.com/200525029536'), '200525029536');
+  assert.equal(
+    extractDouyinWebRid('https://www.douyin.com/follow/live/200525029536?anchor_id=470203709260235'),
+    '200525029536',
+  );
+  assert.equal(extractDouyinWebRid('https://www.douyin.com/root/live/200525029536'), '200525029536');
+  assert.equal(extractDouyinWebRid('https://www.douyin.com/'), '');
+  assert.equal(extractDouyinWebRid('https://www.douyin.com/follow'), '');
+  assert.equal(extractDouyinWebRid('https://www.douyin.com/video/7412345678901234567'), '');
+  assert.equal(extractDouyinWebRid('https://live.douyin.com/category/4_103'), '');
 
   const common = pbEncode([[4, 1700000010]]);
   const user = pbEncode([

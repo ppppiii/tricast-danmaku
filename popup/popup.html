@@ -68,9 +68,10 @@
   </section>
 
   <div class="toggles">
+    <label><input id="showChatFeed" type="checkbox">三端聊天窗 (Alt+L)</label>
     <label><input id="showPlatformBadge" type="checkbox" checked>来源角标 (B/K/抖)</label>
     <label><input id="allowOverlap" type="checkbox">满轨允许叠层</label>
-    <label><input id="suppressNativeBili" type="checkbox" checked>隐藏B站自带弹幕</label>
+    <label><input id="suppressNativeBili" type="checkbox" checked>隐藏网页原弹幕(B/抖)</label>
     <label><input id="mergeRepeated" type="checkbox" checked>8 秒刷屏合并</label>
     <label class="span-2"><input id="mergeTextOnly" type="checkbox" checked>仅合并纯文字（表情 / GIF 不合并）</label>
   </div>
@@ -79,7 +80,7 @@
     <button id="openPlayerPanel" type="button" class="primary">播放器内完整设置</button>
     <button id="resetBtn" type="button">重置</button>
   </footer>
-  <p class="hint"><code>Alt+D</code> 开关 · <code>Alt+C</code> 发弹幕 · <code>Alt+S</code> 设置</p>
+  <p class="hint"><code>Alt+D</code> 弹幕 · <code>Alt+L</code> 聊天窗 · <code>Alt+C</code> 发送 · <code>Alt+S</code> 设置</p>
 
   <script src="../src/shared/state.js"></script>
   <script src="popup.js"></script>

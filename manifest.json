@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TriCast 三端融合弹幕 (B站 · Kick · 抖音)",
-  "version": "1.0.1",
-  "description": "实时融合 B 站、Kick、抖音三端弹幕与表情/GIF，清爽不叠字轨道控制，可切换来源角标并选择三端任意直播间发送与 +1。",
+  "version": "1.1.0",
+  "description": "在 B 站、Kick、抖音任意直播间主界面实时融合三端飘屏弹幕与三端聊天窗（含表情/GIF），支持来源角标切换、跨端发送与 +1。",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -61,7 +61,9 @@
       "matches": [
         "https://live.bilibili.com/*",
         "https://kick.com/*",
-        "https://*.kick.com/*"
+        "https://*.kick.com/*",
+        "https://live.douyin.com/*",
+        "https://www.douyin.com/*"
       ],
       "js": [
         "src/shared/state.js",

@@ -19,7 +19,7 @@
 
   const KICK_NON_CHANNEL_SLUGS = new Set([
     '', 'home', 'browse', 'following', 'categories', 'category', 'search',
-    'login', 'register', 'dashboard', 'settings', 'clips', 'videos',
+    'login', 'register', 'dashboard', 'settings', 'clips', 'videos', 'video',
     'subscriptions', 'notifications', 'messages', 'wallet', 'popout',
     'terms-of-service', 'privacy-policy', 'cookie-policy',
     'community-guidelines', 'dmca-policy', 'transactions',
@@ -27,6 +27,7 @@
 
   const DEFAULT_SETTINGS = Object.freeze({
     showChat: true,
+    showChatFeed: false,
     showPlatformBadge: true,
     suppressNativeBili: true,
     allowOverlap: false,
@@ -74,6 +75,12 @@
     'channel',
     'square',
     'search',
+    'video',
+    'note',
+    'user',
+    'collection',
+    'vs',
+    'series',
   ]);
 
   function extractDouyinWebRid(raw) {
@@ -97,16 +104,17 @@
           return cand;
         }
       }
-      if (u.hostname.toLowerCase() === 'live.douyin.com' && parts.length) {
+      if (
+        u.hostname.toLowerCase() === 'live.douyin.com' &&
+        parts.length &&
+        !DOUYIN_RESERVED_SEGMENTS.has(parts[0].toLowerCase())
+      ) {
         for (let i = parts.length - 1; i >= 0; i--) {
           const seg = parts[i];
           if (/^[\w-]{3,64}$/.test(seg) && !DOUYIN_RESERVED_SEGMENTS.has(seg.toLowerCase())) {
             return seg;
           }
         }
-      }
-      for (const seg of parts) {
-        if (/^\d{5,24}$/.test(seg)) return seg;
       }
       return '';
     } catch {
@@ -126,7 +134,8 @@
       try {
         const u = new URL(/^https?:\/\//i.test(str) ? str : 'https://' + str);
         if (!/(^|\.)bilibili\.com$/i.test(u.hostname)) return '';
-        const seg = u.pathname.split('/').filter(Boolean)[0] || '';
+        const parts = u.pathname.split('/').filter(Boolean);
+        const seg = (parts[0] === 'blanc' ? parts[1] : parts[0]) || '';
         return /^\d+$/.test(seg) && Number(seg) > 0 ? String(Number(seg)) : '';
       } catch {
         return '';
@@ -232,6 +241,7 @@
 
     for (const key of [
       'showChat',
+      'showChatFeed',
       'showPlatformBadge',
       'suppressNativeBili',
       'danmakuPlatformColors',

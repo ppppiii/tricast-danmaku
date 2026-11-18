@@ -23,7 +23,9 @@ export function createDouyinClient({
     if (!tabs?.query || !scripting?.executeScript) return null;
     try {
       const all = await tabs.query({ url: ['https://live.douyin.com/*', 'https://www.douyin.com/*'] });
-      const targetTab = all.find((t) => extractDouyinWebRid(t.url) === webRid);
+      const targetTab =
+        all.find((t) => !String(t.url || '').includes('#tcd-bg-send') && extractDouyinWebRid(t.url) === webRid) ||
+        all.find((t) => extractDouyinWebRid(t.url) === webRid);
       if (!targetTab?.id) return null;
       const results = await scripting.executeScript({
         target: { tabId: targetTab.id },
@@ -71,6 +73,9 @@ export function createDouyinClient({
     const clean = extractDouyinWebRid(rawRid);
     if (!clean) throw new Error('抖音直播间链接或房间号无效，请重新填写');
 
+    const viaTab = await resolveRoomViaOpenTab(clean);
+    if (viaTab?.roomId) return viaTab;
+
     try {
       const res = await fetchFn(`https://live.douyin.com/${encodeURIComponent(clean)}`, {
         credentials: 'include',
@@ -84,9 +89,6 @@ export function createDouyinClient({
         }
       }
     } catch {}
-
-    const viaTab = await resolveRoomViaOpenTab(clean);
-    if (viaTab?.roomId) return viaTab;
 
     throw new Error(`未能解析抖音房间「${clean}」，请确认房间号或打开 live.douyin.com/${clean} 过一下验证`);
   }

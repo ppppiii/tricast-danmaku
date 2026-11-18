@@ -1,11 +1,11 @@
 (function (root, factory) {
-  const api = factory(root.__TCD__?.shadowUi, root.__TCD__?.state);
+  const api = factory(root.__TCD__?.shadowUi, root.__TCD__?.state, root.__TCD__?.chatContent);
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
   }
   root.__TCD__ = root.__TCD__ || {};
   root.__TCD__.panelUi = api;
-})(typeof globalThis !== 'undefined' ? globalThis : window, function (shadowUiMod, stateMod) {
+})(typeof globalThis !== 'undefined' ? globalThis : window, function (shadowUiMod, stateMod, chatContentMod) {
   'use strict';
 
   function buildShadowMarkup() {
@@ -23,10 +23,35 @@
       <span>融合房间</span>
     </button>
     <button id="tcdTriggerToggle" type="button" aria-pressed="true" title="开关弹幕 (Alt+D)">弹幕 开</button>
+    <button id="tcdFeedToggleBtn" type="button" aria-pressed="false" aria-controls="tcdChatFeed" title="三端实时聊天窗 (Alt+L)">📋 聊天窗</button>
     <button id="tcdSendToggleBtn" type="button" aria-expanded="false" aria-controls="tcdSendBar" title="跨平台发弹幕 (Alt+C)">💬 发弹幕</button>
     <button id="tcdWebFullscreenBtn" type="button" aria-pressed="false" title="网页全屏">网页全屏</button>
     <button id="danmakuSettingsButton" type="button" aria-expanded="false" aria-controls="danmakuSettings" title="弹幕设置 (Alt+S)">⚙</button>
   </div>
+
+  <aside id="tcdChatFeed" aria-label="三端实时聊天窗" data-platform-badge="true" hidden>
+    <div id="tcdChatFeedHeader" title="按住可拖动位置">
+      <div class="tcd-feed-title">
+        <strong>三端弹幕池</strong>
+        <div class="tcd-feed-filters" role="tablist" aria-label="按平台筛选">
+          <button type="button" class="tcd-feed-filter active" data-filter="all">全部</button>
+          <button type="button" class="tcd-feed-filter" data-filter="bilibili">B</button>
+          <button type="button" class="tcd-feed-filter" data-filter="kick">K</button>
+          <button type="button" class="tcd-feed-filter" data-filter="douyin">抖</button>
+        </div>
+      </div>
+      <div class="tcd-feed-head-actions">
+        <button id="tcdFeedClearBtn" type="button" title="清空当前列表">清空</button>
+        <button id="tcdFeedCloseBtn" type="button" aria-label="关闭聊天窗">×</button>
+      </div>
+    </div>
+    <div id="tcdChatFeedList" role="log" aria-live="polite" data-active-filter="all">
+      <div id="tcdChatFeedEmpty">等待 B站 / Kick / 抖音 实时弹幕…</div>
+    </div>
+    <div class="tcd-feed-footer">
+      <button id="tcdFeedOpenSendBtn" type="button">💬 选择平台发弹幕 (Alt+C)</button>
+    </div>
+  </aside>
 
   <form id="tcdSendBar" hidden>
     <div class="tcd-send-targets" role="radiogroup" aria-label="选择发送目标直播间">
@@ -109,9 +134,10 @@
 
     <div class="danmaku-toggles">
       <label><input id="showChat" type="checkbox" checked>开启弹幕</label>
+      <label><input id="showChatFeed" type="checkbox">三端聊天窗 (Alt+L)</label>
       <label><input id="showPlatformBadge" type="checkbox" checked>显示来源角标 (B/K/抖)</label>
       <label><input id="allowOverlap" type="checkbox">满轨允许叠层</label>
-      <label><input id="suppressNativeBili" type="checkbox" checked>隐藏B站自带弹幕</label>
+      <label><input id="suppressNativeBili" type="checkbox" checked>隐藏网页原弹幕(B/抖)</label>
       <label><input id="showUsername" type="checkbox">显示用户名</label>
       <label><input id="enableActions" type="checkbox" checked>悬停 +1/回复</label>
       <label><input id="mergeRepeated" type="checkbox" checked>刷屏合并(8s)</label>
@@ -128,7 +154,7 @@
     </div>
 
     <div class="danmaku-settings-footer">
-      <small>Alt+D 开关 · Alt+C 发弹幕 · Alt+S 设置</small>
+      <small>Alt+D 弹幕 · Alt+L 聊天窗 · Alt+C 发送 · Alt+S 设置</small>
       <button id="resetDanmakuStyle" type="button">恢复默认</button>
     </div>
   </section>
@@ -137,7 +163,7 @@
   <div id="roomsDialog" class="tcd-modal-backdrop" hidden>
     <div class="tcd-modal" role="dialog" aria-label="三端直播间配置">
       <h2>三端融合直播间配置</h2>
-      <p>填入同一主播在不同平台的房间号或链接，即可在 B 站或 Kick 页面实时融合三路弹幕。</p>
+      <p>填入同一主播在不同平台的房间号或链接，即可在 B 站、Kick 或抖音页面实时融合三路弹幕与聊天窗。</p>
 
       <div class="tcd-preset-bar">
         <select id="tcdPresetSelect" aria-label="主播预设">
@@ -255,21 +281,29 @@
       shadowRoot,
       store,
       danmakuLayout,
+      chatContent: chatContentOpt = null,
       getRooms = () => stateMod.DEFAULT_ROOMS,
       onSaveRooms = () => {},
       onReconnect = () => {},
       onSendChat = async () => ({ ok: true }),
+      onRepeatFeed = async () => ({ ok: true }),
       onRevealTab = () => {},
       onPanelToggle = () => {},
       onShowChatChange = () => {},
       onSuppressNativeChange = () => {},
     } = options;
 
+    const chatContentApi = chatContentOpt || chatContentMod || null;
     const $ = (id) => shadowRoot.getElementById(id);
     const overlay = $('danmaku');
     const panel = $('danmakuSettings');
     const trigger = $('tcdFloatingTrigger');
     const triggerToggle = $('tcdTriggerToggle');
+    const feedToggleBtn = $('tcdFeedToggleBtn');
+    const chatFeed = $('tcdChatFeed');
+    const feedHeader = $('tcdChatFeedHeader');
+    const feedList = $('tcdChatFeedList');
+    const feedEmpty = $('tcdChatFeedEmpty');
     const settingsBtn = $('danmakuSettingsButton');
     const sendBar = $('tcdSendBar');
     const sendInput = $('tcdSendInput');
@@ -281,6 +315,114 @@
     let replyContext = null;
 
     const PLAT_LABELS = { bilibili: 'B站', kick: 'Kick', douyin: '抖音' };
+    const FEED_MAX_ITEMS = 120;
+
+    function syncFeedEmptyState() {
+      if (!feedList || !feedEmpty) return;
+      const filter = feedList.dataset.activeFilter || 'all';
+      const items = Array.from(feedList.querySelectorAll('.tcd-feed-item'));
+      const hasVisible =
+        filter === 'all' ? items.length > 0 : items.some((el) => el.dataset.plat === filter);
+      feedEmpty.hidden = hasVisible;
+      feedEmpty.textContent =
+        filter === 'all' ? '等待 B站 / Kick / 抖音 实时弹幕…' : `等待 ${PLAT_LABELS[filter] || filter} 实时弹幕…`;
+    }
+
+    function appendChatFeed(message) {
+      if (!feedList || !message || typeof message !== 'object') return;
+      const doc = feedList.ownerDocument || document;
+      const plat = ['bilibili', 'kick', 'douyin'].includes(message.platform) ? message.platform : 'kick';
+      const nearBottom =
+        !feedList.scrollHeight || feedList.scrollHeight - feedList.scrollTop - feedList.clientHeight <= 56;
+
+      const item = doc.createElement('div');
+      item.className = message.isSelf ? 'tcd-feed-item is-self' : 'tcd-feed-item';
+      item.dataset.plat = plat;
+      if (message.id) item.dataset.msgId = String(message.id);
+
+      const mainWrap = doc.createElement('div');
+      mainWrap.className = 'tcd-feed-main';
+      const userSpan = doc.createElement('span');
+      userSpan.className = 'tcd-feed-user';
+      userSpan.textContent = `${message.user || PLAT_LABELS[plat]}: `;
+
+      if (chatContentApi?.append) {
+        chatContentApi.append(mainWrap, message, { showUsername: false });
+        const bodyEl = mainWrap.children?.[1] || null;
+        if (bodyEl && typeof mainWrap.insertBefore === 'function') {
+          mainWrap.insertBefore(userSpan, bodyEl);
+        } else {
+          mainWrap.appendChild(userSpan);
+        }
+      } else {
+        const badge = doc.createElement('span');
+        badge.className = 'platform-badge';
+        badge.dataset.plat = plat;
+        badge.textContent = plat === 'bilibili' ? 'B' : plat === 'douyin' ? '抖' : 'K';
+        const bodySpan = doc.createElement('span');
+        bodySpan.className = 'bullet-text';
+        bodySpan.textContent = String(message.text || '');
+        mainWrap.appendChild(badge);
+        mainWrap.appendChild(userSpan);
+        mainWrap.appendChild(bodySpan);
+      }
+
+      const actions = doc.createElement('div');
+      actions.className = 'tcd-feed-actions';
+      const repeatText = String(message.sendText || message.text || '').trim();
+      if (repeatText) {
+        const plusBtn = doc.createElement('button');
+        plusBtn.type = 'button';
+        plusBtn.textContent = '+1';
+        plusBtn.title = `向 ${PLAT_LABELS[plat]} +1 同发`;
+        plusBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onRepeatFeed(message);
+        });
+        actions.appendChild(plusBtn);
+      }
+      if (message.user) {
+        const replyBtn = doc.createElement('button');
+        replyBtn.type = 'button';
+        replyBtn.textContent = '@';
+        replyBtn.title = `回复 ${message.user}`;
+        replyBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openSendBar({ platform: plat, replyMsg: message });
+        });
+        actions.appendChild(replyBtn);
+      }
+
+      item.appendChild(mainWrap);
+      if (actions.children.length) item.appendChild(actions);
+      feedList.appendChild(item);
+
+      const allItems = feedList.querySelectorAll('.tcd-feed-item');
+      const excess = allItems.length - FEED_MAX_ITEMS;
+      for (let i = 0; i < excess; i++) {
+        allItems[i].remove();
+      }
+
+      syncFeedEmptyState();
+      if (chatFeed && !chatFeed.hidden && nearBottom) {
+        feedList.scrollTop = feedList.scrollHeight;
+      }
+    }
+
+    function removeChatFeedMessages(ids) {
+      if (!feedList || !Array.isArray(ids) || !ids.length) return;
+      for (const id of ids) {
+        const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(String(id)) : String(id);
+        feedList.querySelectorAll(`.tcd-feed-item[data-msg-id="${esc}"]`).forEach((el) => el.remove());
+      }
+      syncFeedEmptyState();
+    }
+
+    function clearChatFeed() {
+      if (!feedList) return;
+      feedList.querySelectorAll('.tcd-feed-item').forEach((el) => el.remove());
+      syncFeedEmptyState();
+    }
 
     function notice(text, error = false, action = null) {
       const toast = $('tcdToast');
@@ -444,6 +586,7 @@
 
       for (const key of [
         'showChat',
+        'showChatFeed',
         'showPlatformBadge',
         'allowOverlap',
         'suppressNativeBili',
@@ -454,6 +597,18 @@
         'danmakuPlatformColors',
       ]) {
         if ($(key)) $(key).checked = Boolean(settings[key]);
+      }
+
+      if (chatFeed) {
+        const wasHidden = chatFeed.hidden;
+        chatFeed.hidden = !settings.showChatFeed;
+        chatFeed.dataset.platformBadge = String(Boolean(settings.showPlatformBadge));
+        if (wasHidden && settings.showChatFeed && feedList) {
+          feedList.scrollTop = feedList.scrollHeight;
+        }
+      }
+      if (feedToggleBtn) {
+        feedToggleBtn.setAttribute('aria-pressed', String(Boolean(settings.showChatFeed)));
       }
 
       if ($('mergeRepeatedModal')) $('mergeRepeatedModal').checked = Boolean(settings.mergeRepeated);
@@ -524,6 +679,79 @@
         else closeSendBar();
       });
       $('tcdSendClose')?.addEventListener('click', closeSendBar);
+
+      feedToggleBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const next = !store.get().showChatFeed;
+        store.update({ showChatFeed: next });
+        if (next) onPanelToggle(true);
+      });
+      $('tcdFeedCloseBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        store.update({ showChatFeed: false });
+      });
+      $('tcdFeedClearBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearChatFeed();
+      });
+      $('tcdFeedOpenSendBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openSendBar();
+      });
+      shadowRoot.querySelectorAll('.tcd-feed-filter').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const filter = btn.dataset.filter || 'all';
+          if (feedList) feedList.dataset.activeFilter = filter;
+          shadowRoot.querySelectorAll('.tcd-feed-filter').forEach((b) => {
+            b.classList.toggle('active', b === btn);
+          });
+          syncFeedEmptyState();
+          if (feedList) feedList.scrollTop = feedList.scrollHeight;
+        });
+      });
+
+      if (chatFeed && feedHeader) {
+        let drag = null;
+        feedHeader.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0 || e.target?.closest?.('button')) return;
+          e.stopPropagation();
+          const playerEl = $('player');
+          if (!playerEl) return;
+          const pRect = playerEl.getBoundingClientRect();
+          const fRect = chatFeed.getBoundingClientRect();
+          drag = {
+            startX: e.clientX,
+            startY: e.clientY,
+            origLeft: fRect.left - pRect.left,
+            origTop: fRect.top - pRect.top,
+            maxLeft: Math.max(0, pRect.width - fRect.width),
+            maxTop: Math.max(0, pRect.height - fRect.height),
+          };
+          feedHeader.setPointerCapture?.(e.pointerId);
+        });
+        feedHeader.addEventListener('pointermove', (e) => {
+          if (!drag) return;
+          const nextLeft = Math.max(0, Math.min(drag.maxLeft, drag.origLeft + (e.clientX - drag.startX)));
+          const nextTop = Math.max(0, Math.min(drag.maxTop, drag.origTop + (e.clientY - drag.startY)));
+          chatFeed.style.left = `${Math.round(nextLeft)}px`;
+          chatFeed.style.top = `${Math.round(nextTop)}px`;
+          chatFeed.style.right = 'auto';
+          chatFeed.style.bottom = 'auto';
+        });
+        const endDrag = (e) => {
+          if (!drag) return;
+          drag = null;
+          try {
+            feedHeader.releasePointerCapture?.(e.pointerId);
+          } catch {}
+        };
+        feedHeader.addEventListener('pointerup', endDrag);
+        feedHeader.addEventListener('pointercancel', endDrag);
+      }
+      for (const evt of ['click', 'dblclick', 'wheel', 'pointerdown']) {
+        chatFeed?.addEventListener(evt, (e) => e.stopPropagation());
+      }
 
       shadowRoot.querySelectorAll('.tcd-target-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
@@ -700,6 +928,7 @@
 
       for (const key of [
         'showChat',
+        'showChatFeed',
         'showPlatformBadge',
         'allowOverlap',
         'suppressNativeBili',
@@ -814,6 +1043,9 @@
       setSendTarget,
       populateRoomsDialog,
       updateStatuses,
+      appendChatFeed,
+      removeChatFeedMessages,
+      clearChatFeed,
       notice,
     };
   }
