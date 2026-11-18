@@ -17,7 +17,7 @@
 
 ### 方式 A：下载安装包（推荐）
 
-1. 前往本仓库 **GitHub Releases** 下载最新的 `tricast-danmaku-v*-mv3.zip`（或仓库内预构建的 [tricast-danmaku-mv3.zip](dist/tricast-danmaku-mv3.zip)）并**完整解压**到固定文件夹。
+1. 前往 [**GitHub Releases**](https://github.com/ppppiii/tricast-danmaku/releases/latest) 下载最新的 `tricast-danmaku-v*-mv3.zip`（或仓库内预构建的 [tricast-danmaku-mv3.zip](dist/tricast-danmaku-mv3.zip)）并**完整解压**到固定文件夹。
 2. 在 Chrome 打开 `chrome://extensions/` 或在 Edge 打开 `edge://extensions/`。
 3. 打开右上角 **开发者模式（Developer mode）**。
 4. 点击 **加载已解压的扩展程序（Load unpacked）**，选择解压后的扩展目录（包含 `manifest.json` 的文件夹）。
@@ -25,7 +25,7 @@
 ### 方式 B：从源码目录直接加载
 
 ```sh
-git clone <your-repo-url>
+git clone https://github.com/ppppiii/tricast-danmaku.git
 cd tricast-danmaku
 npm test      # 运行全部单元测试（零外部依赖，仅需 Node.js >= 20）
 npm run pack  # 重新打包 dist/tricast-danmaku-mv3.zip

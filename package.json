@@ -2,6 +2,12 @@
   "name": "tricast-danmaku",
   "version": "1.1.2",
   "private": true,
+  "license": "MIT",
+  "homepage": "https://github.com/ppppiii/tricast-danmaku",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ppppiii/tricast-danmaku.git"
+  },
   "description": "Tri-platform real-time danmaku fusion (Bilibili + Kick + Douyin) with cross-platform sending and Bilibili-grade non-overlapping lane control",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
