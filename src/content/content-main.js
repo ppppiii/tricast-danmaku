@@ -3,7 +3,7 @@
 
   if (location.hash === '#tcd-bg-send') return;
   if (document.documentElement.hasAttribute('data-tcd-running')) return;
-  document.documentElement.setAttribute('data-tcd-running', '1.1.1');
+  document.documentElement.setAttribute('data-tcd-running', '1.1.2');
 
   const TCD = globalThis.__TCD__;
   if (!TCD) return;
@@ -104,6 +104,26 @@
     chrome.runtime.sendMessage({ type: 'tcd:reveal-tab', tabId }).catch(() => {});
   }
 
+  async function dismissCurrentSiteTip() {
+    const { site } = hostMount.getSiteInfo();
+    if (!SUPPORTED_SITES.includes(site)) return;
+    const prev = await TCD.state.readData(TCD.state.STORAGE_KEYS.tips, {});
+    const dismissedSites = {
+      ...(prev && typeof prev.dismissedSites === 'object' ? prev.dismissedSites : {}),
+      [site]: true,
+    };
+    await TCD.state.writeData(TCD.state.STORAGE_KEYS.tips, { dismissedSites });
+  }
+
+  async function maybeShowSiteTip() {
+    const { site, room } = hostMount.getSiteInfo();
+    if (!SUPPORTED_SITES.includes(site) || !room || !panelUi) return;
+    const tips = await TCD.state.readData(TCD.state.STORAGE_KEYS.tips, {});
+    if (tips?.dismissedSites?.[site]) return;
+    panelUi.showOnboardingTip(site);
+    hostMount.wakeTrigger();
+  }
+
   function onShadowReady(sr) {
     shadowRoot = sr;
     TCD.panelUi.mountShadowContent(shadowRoot);
@@ -200,6 +220,7 @@
         }
       },
       onRevealTab: revealSendTab,
+      onDismissTip: dismissCurrentSiteTip,
       onPanelToggle: (open) => {
         if (open) hostMount.wakeTrigger();
       },
@@ -225,6 +246,7 @@
     }
     panelUi.populateRoomsDialog(rooms);
     if (lastStatuses) panelUi.updateStatuses(lastStatuses);
+    maybeShowSiteTip();
   }
 
   function handleIncomingMessage(message) {
@@ -362,6 +384,7 @@
     onRouteChange: () => {
       syncSiteRoomOnNavigate();
       syncHubConnection();
+      maybeShowSiteTip();
     },
     onWebFullscreenChange: (active) => {
       const btn = shadowRoot?.getElementById('tcdWebFullscreenBtn');

@@ -164,6 +164,7 @@
     <div class="tcd-modal" role="dialog" aria-label="三端直播间配置">
       <h2>三端融合直播间配置</h2>
       <p>填入同一主播在不同平台的房间号或链接，即可在 B 站、Kick 或抖音页面实时融合三路弹幕与聊天窗。</p>
+      <p class="tcd-rooms-subtip">💡 提示：在 B 站或抖音观看建议随手关掉播放器自带弹幕；在 Kick 观看建议关掉其他弹幕插件/油猴脚本，避免双层重影。</p>
 
       <div class="tcd-preset-bar">
         <select id="tcdPresetSelect" aria-label="主播预设">
@@ -262,6 +263,18 @@
     </div>
   </div>
 
+  <aside id="tcdOnboardingTip" role="dialog" aria-label="防重影使用提示" hidden>
+    <div class="tcd-tip-head">
+      <strong>💡 三端弹幕防重影提示</strong>
+      <button id="tcdTipCloseX" type="button" aria-label="关闭提示">×</button>
+    </div>
+    <p id="tcdOnboardingBody"></p>
+    <div class="tcd-tip-actions">
+      <button id="tcdTipOpenRoomsBtn" type="button">配置融合房间</button>
+      <button id="tcdTipDismissBtn" type="button" class="primary">知道了，不再提示</button>
+    </div>
+  </aside>
+
   <div id="tcdToast" role="status" hidden></div>
 </div>`;
   }
@@ -288,6 +301,7 @@
       onSendChat = async () => ({ ok: true }),
       onRepeatFeed = async () => ({ ok: true }),
       onRevealTab = () => {},
+      onDismissTip = () => {},
       onPanelToggle = () => {},
       onShowChatChange = () => {},
       onSuppressNativeChange = () => {},
@@ -309,13 +323,36 @@
     const sendInput = $('tcdSendInput');
     const sendSubmit = $('tcdSendSubmit');
     const replyBadge = $('tcdReplyBadge');
+    const onboardingTip = $('tcdOnboardingTip');
+    const onboardingBody = $('tcdOnboardingBody');
 
     let toastTimer = 0;
     let activeSendTarget = 'bilibili';
     let replyContext = null;
 
     const PLAT_LABELS = { bilibili: 'B站', kick: 'Kick', douyin: '抖音' };
+    const TIP_COPY = {
+      bilibili:
+        '为避免双层弹幕重影，建议在 B 站播放器底栏关闭自带弹幕（插件也已默认开启隐藏兜底）。点「配置融合房间」即可填入三端直播间。',
+      douyin:
+        '为避免双层弹幕重影，建议在抖音播放器底栏关闭原生弹幕开关，只保留本插件的三端融合弹幕。点「配置融合房间」即可填入三端直播间。',
+      kick:
+        'Kick 原生无画面弹幕；若你同时装了其他 Kick 弹幕扩展或油猴脚本（如 DanMage 等），建议将其关闭以免重影。点「配置融合房间」即可填入三端直播间。',
+    };
     const FEED_MAX_ITEMS = 120;
+
+    function showOnboardingTip(site) {
+      if (!onboardingTip || !onboardingBody) return;
+      const copy = TIP_COPY[site];
+      if (!copy) return;
+      onboardingBody.textContent = copy;
+      onboardingTip.dataset.site = site;
+      onboardingTip.hidden = false;
+    }
+
+    function hideOnboardingTip() {
+      if (onboardingTip) onboardingTip.hidden = true;
+    }
 
     function syncFeedEmptyState() {
       if (!feedList || !feedEmpty) return;
@@ -463,6 +500,7 @@
 
     function openSendBar({ platform = null, replyMsg = null } = {}) {
       if (!sendBar) return;
+      hideOnboardingTip();
       if (platform) setSendTarget(platform);
       if (replyMsg?.user) {
         replyContext = replyMsg;
@@ -640,6 +678,7 @@
 
     function openPanel(enabled, restoreFocus = false) {
       if (!panel) return;
+      if (enabled) hideOnboardingTip();
       panel.hidden = !enabled;
       if (settingsBtn) settingsBtn.setAttribute('aria-expanded', String(enabled));
       if (trigger) trigger.dataset.open = String(enabled);
@@ -656,6 +695,7 @@
     }
 
     function openRoomsDialog() {
+      hideOnboardingTip();
       populateRoomsDialog();
       const modal = $('roomsDialog');
       if (modal) modal.hidden = false;
@@ -1023,6 +1063,23 @@
         true,
       );
 
+      const dismissTip = (e) => {
+        e?.stopPropagation?.();
+        hideOnboardingTip();
+        onDismissTip();
+      };
+      $('tcdTipDismissBtn')?.addEventListener('click', dismissTip);
+      $('tcdTipCloseX')?.addEventListener('click', dismissTip);
+      $('tcdTipOpenRoomsBtn')?.addEventListener('click', (e) => {
+        e?.stopPropagation?.();
+        hideOnboardingTip();
+        onDismissTip();
+        openRoomsDialog();
+      });
+      for (const evt of ['click', 'dblclick', 'pointerdown']) {
+        onboardingTip?.addEventListener(evt, (e) => e.stopPropagation());
+      }
+
       panel?.addEventListener('click', (e) => e.stopPropagation());
       panel?.addEventListener('dblclick', (e) => e.stopPropagation());
       trigger?.addEventListener('click', (e) => e.stopPropagation());
@@ -1046,6 +1103,8 @@
       appendChatFeed,
       removeChatFeedMessages,
       clearChatFeed,
+      showOnboardingTip,
+      hideOnboardingTip,
       notice,
     };
   }

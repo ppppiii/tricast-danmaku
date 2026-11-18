@@ -15,6 +15,7 @@
     blocked: 'tcd_blocked_v1',
     avoidance: 'tcd_avoidance_v1',
     kickCache: 'tcd_kick_cache_v1',
+    tips: 'tcd_tips_v1',
   });
 
   const KICK_NON_CHANNEL_SLUGS = new Set([

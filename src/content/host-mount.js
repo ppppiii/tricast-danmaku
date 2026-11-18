@@ -420,7 +420,8 @@ html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
         const panel = shadowRoot?.getElementById('danmakuSettings');
         const sendBar = shadowRoot?.getElementById('tcdSendBar');
         const chatFeed = shadowRoot?.getElementById('tcdChatFeed');
-        if ((panel && !panel.hidden) || (sendBar && !sendBar.hidden) || (chatFeed && !chatFeed.hidden)) return;
+        const tip = shadowRoot?.getElementById('tcdOnboardingTip');
+        if ((panel && !panel.hidden) || (sendBar && !sendBar.hidden) || (chatFeed && !chatFeed.hidden) || (tip && !tip.hidden)) return;
         player.classList.remove('tcd-show-trigger');
         player.classList.add('tcd-controls-hidden');
       }, 2800);

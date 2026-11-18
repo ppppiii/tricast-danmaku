@@ -1296,6 +1296,85 @@ button:disabled {
   text-align: center;
 }
 
+.tcd-rooms-subtip {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(83, 252, 24, 0.08);
+  border: 1px solid var(--a-border);
+  color: #dbe4ef !important;
+  font-size: 11.5px !important;
+  line-height: 1.5;
+}
+
+/* First-visit anti-ghosting onboarding tip */
+#tcdOnboardingTip {
+  position: absolute;
+  right: 14px;
+  bottom: 96px;
+  z-index: 72;
+  width: min(360px, calc(100% - 28px));
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(16, 16, 19, 0.95);
+  color: var(--settings-ink);
+  border: 1px solid var(--a-border);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+#tcdOnboardingTip[hidden] {
+  display: none;
+}
+
+.tcd-tip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.tcd-tip-head strong {
+  font-size: 13px;
+  color: #fff;
+}
+
+#tcdTipCloseX {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+#tcdOnboardingBody {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #cbd5e1;
+}
+
+.tcd-tip-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tcd-tip-actions button {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.tcd-tip-actions .primary {
+  background: var(--a);
+  color: #0d1608;
+  border: 0;
+  font-weight: 700;
+}
+
 /* Toast inside player */
 #tcdToast {
   position: absolute;

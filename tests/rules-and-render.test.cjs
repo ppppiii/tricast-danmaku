@@ -247,18 +247,30 @@ test('hostMount.detectHostSite identifies live vs non-live URLs across all 3 pla
 test('panelUi chat feed appends tri-platform messages, respects filter state, and deletes by id', () => {
   assert.match(panelUi.buildShadowMarkup(), /id="tcdChatFeed"/);
   assert.match(panelUi.buildShadowMarkup(), /id="tcdFeedToggleBtn"/);
+  assert.match(panelUi.buildShadowMarkup(), /id="tcdOnboardingTip"/);
 
   const doc = makeFakeDoc();
   const ids = new Map();
   const makeById = (id, tag = 'div') => {
     const el = doc.createElement(tag);
     el.id = id;
+    el._listeners = new Map();
+    const origAdd = el.addEventListener;
+    el.addEventListener = (evt, fn) => {
+      el._listeners.set(evt, fn);
+      origAdd.call(el, evt, fn);
+    };
+    el._click = () => el._listeners.get('click')?.({ stopPropagation() {} });
     ids.set(id, el);
     return el;
   };
 
   makeById('player');
   makeById('danmaku');
+  const tip = makeById('tcdOnboardingTip', 'aside');
+  tip.hidden = true;
+  const tipBody = makeById('tcdOnboardingBody', 'p');
+  const tipDismiss = makeById('tcdTipDismissBtn', 'button');
   const feed = makeById('tcdChatFeed', 'aside');
   feed.hidden = true;
   makeById('tcdChatFeedHeader');
@@ -286,6 +298,7 @@ test('panelUi chat feed appends tri-platform messages, respects filter state, an
     return b;
   });
 
+  let tipDismissedCount = 0;
   const store = state.createStore();
   const fakeShadow = {
     ownerDocument: doc,
@@ -298,7 +311,20 @@ test('panelUi chat feed appends tri-platform messages, respects filter state, an
     shadowRoot: fakeShadow,
     store,
     chatContent: { append },
+    onDismissTip: () => {
+      tipDismissedCount++;
+    },
   });
+
+  // Verify first-visit anti-ghosting tip for Kick & Douyin and persistent dismiss callback
+  ui.showOnboardingTip('kick');
+  assert.equal(tip.hidden, false);
+  assert.match(tipBody.textContent, /DanMage/);
+  ui.showOnboardingTip('douyin');
+  assert.match(tipBody.textContent, /抖音播放器底栏关闭原生弹幕/);
+  tipDismiss._click();
+  assert.equal(tip.hidden, true);
+  assert.equal(tipDismissedCount, 1);
 
   store.update({ showChatFeed: true });
   assert.equal(feed.hidden, false);
