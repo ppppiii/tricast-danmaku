@@ -95,5 +95,7 @@ tricast-danmaku/
 
 ## 致谢与协议
 
+- **Contributors**：[@ppppiii](https://github.com/ppppiii) · Gemini (Antigravity)
+- 感谢gemini 4-carbon的开发！真是好助手。
 - 弹幕排版、避让区、7TV 叠层、合并/屏蔽及静音后台代发等核心设计灵感来自开源项目 [Sur4lis/FreeCast](https://github.com/Sur4lis/FreeCast)。
 - 本项目采用 [MIT License](LICENSE) 开源。
