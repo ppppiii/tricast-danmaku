@@ -1,0 +1,243 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const zlib = require('node:zlib');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+const loadEsm = (rel) => import(pathToFileURL(path.resolve(__dirname, '..', rel)).href);
+
+test('hash-sign: md5, signWbi, and webcastSign work deterministically', async () => {
+  const { md5, signWbi, buildDouyinWsSignature } = await loadEsm('src/protocols/hash-sign.mjs');
+
+  assert.equal(md5('abc'), '900150983cd24fb0d6963f7d28e17f72');
+
+  const query = signWbi(
+    { id: 10001, type: 0 },
+    {
+      img_url: 'https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png',
+      sub_url: 'https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png',
+    },
+    1700000000000,
+  );
+  assert.match(query, /id=10001/);
+  assert.match(query, /wts=1700000000/);
+  assert.match(query, /w_rid=[0-9a-f]{32}/);
+
+  const params = new URLSearchParams({
+    live_id: '1',
+    aid: '6383',
+    version_code: '180800',
+    webcast_sdk_version: '1.0.14-beta.0',
+    room_id: '7300000000000000001',
+    did_rule: '3',
+    user_unique_id: '7300000000000000002',
+    device_platform: 'web',
+    identity: 'audience',
+  });
+  const sig = buildDouyinWsSignature(params, [1, true, 42, 77]);
+  assert.equal(typeof sig, 'string');
+  assert.equal(sig.length, 16);
+});
+
+test('bili-protocol decodes protover=2 deflated DANMU_MSG with inline emotes and big sticker', async () => {
+  const { encodeBiliPacket, decodeBiliFrames, normalizeBiliCommand } = await loadEsm(
+    'src/protocols/bili-protocol.mjs',
+  );
+
+  const inner1 = encodeBiliPacket(5, {
+    cmd: 'DANMU_MSG',
+    info: [
+      [0, 1, 25, 16777215, 1700000001000, 0, 0, '', 0, 0, 0, '', 0, '{}', '{}', {
+        extra: JSON.stringify({
+          id_str: 'bili-msg-1',
+          emots: {
+            '[doge]': { url: 'http://i0.hdslb.com/bfs/emote/doge.png' },
+          },
+        }),
+      }],
+      '好活 [doge] 哈哈',
+      [10086, 'B站水友'],
+    ],
+  });
+  const inner2 = encodeBiliPacket(5, {
+    cmd: 'DANMU_MSG',
+    info: [
+      [0, 1, 25, 5816798, 1700000002000, 0, 0, '', 0, 0, 0, '', 0, {
+        url: 'https://i0.hdslb.com/bfs/emote/big_up.png',
+        width: 60,
+        height: 60,
+      }, '{}', { extra: JSON.stringify({ id_str: 'bili-msg-2' }) }],
+      '大表情',
+      [10087, '舰长哥'],
+    ],
+  });
+
+  const combined = Buffer.concat([Buffer.from(inner1), Buffer.from(inner2)]);
+  const deflated = zlib.deflateSync(combined);
+  const outer = Buffer.alloc(16 + deflated.length);
+  outer.writeUInt32BE(outer.length, 0);
+  outer.writeUInt16BE(16, 4);
+  outer.writeUInt16BE(2, 6); // protover = 2
+  outer.writeUInt32BE(5, 8);
+  outer.writeUInt32BE(1, 12);
+  deflated.copy(outer, 16);
+
+  const frames = await decodeBiliFrames(outer);
+  assert.equal(frames.length, 2);
+
+  const m1 = normalizeBiliCommand(frames[0].body, 1700000001500).message;
+  assert.equal(m1.platform, 'bilibili');
+  assert.equal(m1.id, 'bili-msg-1');
+  assert.equal(m1.hasMedia, true);
+  assert.equal(m1.hasGif, false);
+  assert.equal(m1.segments.length, 3);
+  assert.equal(m1.segments[1].type, 'emote');
+  assert.equal(m1.segments[1].url, 'https://i0.hdslb.com/bfs/emote/doge.png');
+
+  const m2 = normalizeBiliCommand(frames[1].body, 1700000002500).message;
+  assert.equal(m2.hasMedia, true);
+  assert.equal(m2.hasGif, true);
+  assert.equal(m2.segments[0].type, 'sticker');
+});
+
+test('douyin-protocol decodes gzipped PushFrame ChatMessage + EmojiChatMessage + ack + HTML roomId', async () => {
+  const { pbEncode, decodeDouyinFrame, parseDouyinRoomHtml } = await loadEsm(
+    'src/protocols/douyin-protocol.mjs',
+  );
+
+  const common = pbEncode([[4, 1700000010]]);
+  const user = pbEncode([
+    [1, 99001122],
+    [3, '抖音老铁'],
+  ]);
+  const rtf = pbEncode([[2, pbEncode([[1, 'https://p3.douyinpic.com/img/aweme-emote.png']]) ]]);
+  const chatPayload = pbEncode([
+    [1, common],
+    [2, user],
+    [3, '太秀了'],
+    [6, '#25f4ee'],
+    [15, rtf],
+  ]);
+  const emojiPayload = pbEncode([
+    [1, common],
+    [2, user],
+    [4, pbEncode([[1, pbEncode([[1, 'https://p3.douyinpic.com/img/sticker.webp']])]])],
+    [5, '[比心]'],
+  ]);
+
+  const msg1 = pbEncode([
+    [1, 'WebcastChatMessage'],
+    [2, chatPayload],
+    [3, 777111222],
+  ]);
+  const msg2 = pbEncode([
+    [1, 'WebcastEmojiChatMessage'],
+    [2, emojiPayload],
+    [3, 777111223],
+  ]);
+  const respBytes = pbEncode([
+    [1, msg1],
+    [1, msg2],
+    [5, 'internal-ext-token'],
+    [9, 1],
+  ]);
+  const gzippedResp = zlib.gzipSync(Buffer.from(respBytes));
+  const outerFrame = pbEncode([
+    [2, 998877n],
+    [8, gzippedResp],
+  ]);
+
+  const decoded = await decodeDouyinFrame(outerFrame, 1700000010500);
+  assert.ok(decoded.ack instanceof Uint8Array);
+  assert.equal(decoded.messages.length, 2);
+
+  assert.equal(decoded.messages[0].platform, 'douyin');
+  assert.equal(decoded.messages[0].text, '太秀了');
+  assert.equal(decoded.messages[0].hasMedia, true);
+  assert.equal(decoded.messages[0].segments[1].url, 'https://p3.douyinpic.com/img/aweme-emote.png');
+
+  assert.equal(decoded.messages[1].platform, 'douyin');
+  assert.equal(decoded.messages[1].hasGif, true);
+  assert.equal(decoded.messages[1].segments[0].type, 'sticker');
+  assert.equal(decoded.messages[1].segments[0].url, 'https://p3.douyinpic.com/img/sticker.webp');
+
+  const sampleHtml = `<script id="RENDER_DATA" type="application/json">${encodeURIComponent(
+    JSON.stringify({
+      app: {
+        initialState: {
+          roomStore: {
+            roomInfo: {
+              web_rid: '80017709309',
+              roomId: '7345678901234567890',
+              anchor: { nickname: '抖音主播A' },
+              room: { id_str: '7345678901234567890', status: 2, title: '开播测试' },
+            },
+            user_unique_id: '7399999999999999999',
+          },
+        },
+      },
+    }),
+  )}</script>`;
+  const roomMeta = parseDouyinRoomHtml(sampleHtml, '80017709309');
+  assert.equal(roomMeta.roomId, '7345678901234567890');
+  assert.equal(roomMeta.nickname, '抖音主播A');
+  assert.equal(roomMeta.status, 2);
+});
+
+test('kick-protocol filters Deleted by a moderator and resolves native + 7TV + zero-width + GIF', async () => {
+  const { parseKickPusherFrame, ingest7tvEmoteSet, isDeletedPlaceholder } = await loadEsm(
+    'src/protocols/kick-protocol.mjs',
+  );
+
+  assert.equal(isDeletedPlaceholder(': Deleted by a moderator'), true);
+  assert.equal(isDeletedPlaceholder('Deleted by the broadcaster'), true);
+  assert.equal(isDeletedPlaceholder('被管理员删除'), true);
+  assert.equal(isDeletedPlaceholder(':D nice play'), false);
+
+  const deletedRes = parseKickPusherFrame(
+    JSON.stringify({
+      event: 'App\\Events\\ChatMessageEvent',
+      data: JSON.stringify({
+        id: 'mod-del-1',
+        content: ': Deleted by a moderator',
+        sender: { id: 1, username: 'ModTarget' },
+      }),
+    }),
+  );
+  assert.equal(deletedRes.kind, 'delete');
+
+  const emotes7tv = ingest7tvEmoteSet([
+    {
+      name: 'Sadge',
+      flags: 0,
+      data: { host: { url: '//cdn.7tv.app/emote/sadge', files: [{ name: '2x.webp' }] } },
+    },
+    {
+      name: 'Crown',
+      flags: 1,
+      data: { flags: 256, host: { url: '//cdn.7tv.app/emote/crown', files: [{ name: '2x.webp' }] } },
+    },
+  ]);
+
+  const richFrame = parseKickPusherFrame(
+    JSON.stringify({
+      event: 'App\\Events\\ChatMessageEvent',
+      data: JSON.stringify({
+        id: 'kick-msg-1',
+        content: 'Nice [emote:37226:KEKW] Sadge Crown https://media.tenor.com/cat/dance.gif',
+        sender: { id: 42, username: 'KickUser', identity: { color: '#53fc18' } },
+      }),
+    }),
+    emotes7tv,
+  );
+  assert.equal(richFrame.kind, 'danmaku');
+  const m = richFrame.message;
+  assert.equal(m.hasMedia, true);
+  assert.equal(m.hasGif, true);
+  assert.ok(m.segments.some((s) => s.type === 'emote' && s.alt === 'KEKW'));
+  const sadgeSeg = m.segments.find((s) => s.type === 'emote' && s.alt === 'Sadge');
+  assert.ok(sadgeSeg && sadgeSeg.overlays?.length === 1 && sadgeSeg.overlays[0].alt === 'Crown');
+  assert.ok(m.segments.some((s) => s.type === 'sticker'));
+});

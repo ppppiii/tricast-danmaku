@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>TriCast 三端融合弹幕</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="head">
+    <div class="brand">
+      <img src="../icons/icon-32.png" width="24" height="24" alt="">
+      <div>
+        <strong>TriCast 三端融合弹幕</strong>
+        <small id="tabStatus">检测状态中…</small>
+      </div>
+    </div>
+    <label class="switch" title="开启或关闭弹幕">
+      <input id="showChat" type="checkbox" checked>
+      <span></span>
+    </label>
+  </header>
+
+  <section class="rooms-box">
+    <div class="rooms-head">
+      <span>融合直播间配置</span>
+      <div class="status-pills">
+        <span id="pillBili" class="pill" data-plat="bilibili" data-state="idle">B站</span>
+        <span id="pillKick" class="pill" data-plat="kick" data-state="idle">Kick</span>
+        <span id="pillDouyin" class="pill" data-plat="douyin" data-state="idle">抖音</span>
+      </div>
+    </div>
+
+    <div class="room-line">
+      <label><input id="roomEnBili" type="checkbox" checked>B站</label>
+      <input id="roomValBili" type="text" placeholder="房间号或 live.bilibili.com/...">
+    </div>
+    <div class="room-line">
+      <label><input id="roomEnKick" type="checkbox" checked>Kick</label>
+      <input id="roomValKick" type="text" placeholder="频道名或 kick.com/...">
+    </div>
+    <div class="room-line">
+      <label><input id="roomEnDouyin" type="checkbox" checked>抖音</label>
+      <input id="roomValDouyin" type="text" placeholder="房间号或 live.douyin.com/...">
+    </div>
+    <div class="room-actions">
+      <button id="saveRoomsBtn" type="button" class="primary">保存并重连</button>
+      <button id="openRoomsPanelBtn" type="button">预设管理</button>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="ctrl">
+      <label for="danmakuTransparency">透明度 <output id="danmakuTransparencyVal">15%</output></label>
+      <input id="danmakuTransparency" type="range" min="0" max="95" step="1" value="15">
+    </div>
+    <div class="ctrl">
+      <label for="danmakuSize">字号 <output id="danmakuSizeVal">22 px</output></label>
+      <input id="danmakuSize" type="range" min="14" max="64" step="1" value="22">
+    </div>
+    <div class="ctrl">
+      <label for="danmakuSpeed">速度 <output id="danmakuSpeedVal">1.0×</output></label>
+      <input id="danmakuSpeed" type="range" min="0.4" max="2.5" step="0.1" value="1">
+    </div>
+    <div class="ctrl">
+      <label for="danmakuMaxCount">同屏上限 <output id="danmakuMaxCountVal">80 条</output></label>
+      <input id="danmakuMaxCount" type="range" min="20" max="310" step="10" value="80">
+    </div>
+  </section>
+
+  <div class="toggles">
+    <label><input id="showPlatformBadge" type="checkbox" checked>来源角标 (B/K/抖)</label>
+    <label><input id="allowOverlap" type="checkbox">满轨允许叠层</label>
+    <label><input id="suppressNativeBili" type="checkbox" checked>隐藏B站自带弹幕</label>
+    <label><input id="mergeRepeated" type="checkbox" checked>8 秒刷屏合并</label>
+    <label class="span-2"><input id="mergeTextOnly" type="checkbox" checked>仅合并纯文字（表情 / GIF 不合并）</label>
+  </div>
+
+  <footer class="actions">
+    <button id="openPlayerPanel" type="button" class="primary">播放器内完整设置</button>
+    <button id="resetBtn" type="button">重置</button>
+  </footer>
+  <p class="hint"><code>Alt+D</code> 开关 · <code>Alt+C</code> 发弹幕 · <code>Alt+S</code> 设置</p>
+
+  <script src="../src/shared/state.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

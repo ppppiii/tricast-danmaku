@@ -1,0 +1,82 @@
+{
+  "manifest_version": 3,
+  "name": "TriCast 三端融合弹幕 (B站 · Kick · 抖音)",
+  "version": "1.0.0",
+  "description": "实时融合 B 站、Kick、抖音三端弹幕与表情/GIF，清爽不叠字轨道控制，可切换来源角标并选择三端任意直播间发送与 +1。",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "cookies",
+    "tabs",
+    "scripting",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "https://*.bilibili.com/*",
+    "https://*.hdslb.com/*",
+    "https://*.biliimg.com/*",
+    "https://kick.com/*",
+    "https://*.kick.com/*",
+    "https://*.pusher.com/*",
+    "https://7tv.io/*",
+    "https://*.7tv.app/*",
+    "https://live.douyin.com/*",
+    "https://*.douyin.com/*",
+    "https://*.douyinpic.com/*",
+    "https://*.byteimg.com/*",
+    "https://*.bytednsdoc.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/background.mjs",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "TriCast 三端弹幕",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://kick.com/*",
+        "https://*.kick.com/*"
+      ],
+      "js": [
+        "src/content/kick-page-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://live.bilibili.com/*",
+        "https://kick.com/*",
+        "https://*.kick.com/*"
+      ],
+      "js": [
+        "src/shared/state.js",
+        "src/content/shadow-ui.js",
+        "src/content/chat-content.js",
+        "src/content/danmaku-layout.js",
+        "src/content/chat-rules.js",
+        "src/content/chat-blocking.js",
+        "src/content/avoidance.js",
+        "src/content/danmaku-actions.js",
+        "src/content/host-mount.js",
+        "src/content/panel-ui.js",
+        "src/content/content-main.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

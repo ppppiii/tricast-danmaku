@@ -1,0 +1,10 @@
+{
+  "name": "tricast-danmaku",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tri-platform real-time danmaku fusion (Bilibili + Kick + Douyin) with cross-platform sending and Bilibili-grade non-overlapping lane control",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "pack": "node scripts/pack-zip.cjs"
+  }
+}
