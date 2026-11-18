@@ -165,7 +165,7 @@
         <div class="tcd-room-row">
           <label class="tcd-room-head"><input id="roomEnDouyin" type="checkbox" checked><span style="color:var(--douyin)">抖音</span></label>
           <div class="tcd-room-input-wrap">
-            <input id="roomValDouyin" type="text" placeholder="抖音直播间号或 live.douyin.com/123456">
+            <input id="roomValDouyin" type="text" placeholder="房间号 / live.douyin.com / follow/live 链接">
             <span id="roomStatusDouyin" class="tcd-room-status">未配置</span>
           </div>
         </div>

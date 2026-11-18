@@ -1,7 +1,12 @@
 // Douyin Webcast Protobuf WebSocket stream client for TriCast Background Hub.
 
 import { buildDouyinWsSignature } from '../protocols/hash-sign.mjs';
-import { pbEncode, decodeDouyinFrame, parseDouyinRoomHtml } from '../protocols/douyin-protocol.mjs';
+import {
+  pbEncode,
+  decodeDouyinFrame,
+  parseDouyinRoomHtml,
+  extractDouyinWebRid,
+} from '../protocols/douyin-protocol.mjs';
 
 const DOUYIN_WS_HOSTS = [
   'webcast100-ws-web-lq',
@@ -17,33 +22,54 @@ export function createDouyinClient({
   async function resolveRoomViaOpenTab(webRid) {
     if (!tabs?.query || !scripting?.executeScript) return null;
     try {
-      const all = await tabs.query({ url: ['https://live.douyin.com/*'] });
-      const targetTab = all.find((t) => {
-        try {
-          const u = new URL(t.url);
-          const seg = u.pathname.split('/').filter(Boolean)[0] || '';
-          return seg === webRid;
-        } catch {
-          return false;
-        }
-      });
+      const all = await tabs.query({ url: ['https://live.douyin.com/*', 'https://www.douyin.com/*'] });
+      const targetTab = all.find((t) => extractDouyinWebRid(t.url) === webRid);
       if (!targetTab?.id) return null;
       const results = await scripting.executeScript({
         target: { tabId: targetTab.id },
-        func: () => document.documentElement?.innerHTML || '',
+        func: () => {
+          let perfRoomId = '';
+          let perfUid = '';
+          try {
+            const entries = performance.getEntriesByType('resource') || [];
+            for (let i = entries.length - 1; i >= 0; i--) {
+              const name = entries[i]?.name || '';
+              if (!name.includes('douyin.com')) continue;
+              const rm = /[?&]room_id=(\d{15,24})/.exec(name);
+              if (rm && !perfRoomId) perfRoomId = rm[1];
+              const um = /[?&]user_unique_id=(\d{8,24})/.exec(name);
+              if (um && !perfUid) perfUid = um[1];
+              if (perfRoomId && perfUid) break;
+            }
+          } catch {}
+          return {
+            perfRoomId,
+            perfUid,
+            html: document.documentElement?.innerHTML || '',
+          };
+        },
       });
-      const html = results?.[0]?.result || '';
-      if (html) {
-        const parsed = parseDouyinRoomHtml(html, webRid);
+      const res = results?.[0]?.result;
+      if (res?.perfRoomId) {
+        return {
+          roomId: res.perfRoomId,
+          userUniqueId: res.perfUid || '',
+          nickname: '',
+          title: '',
+          status: 2,
+        };
+      }
+      if (res?.html) {
+        const parsed = parseDouyinRoomHtml(res.html, webRid);
         if (parsed.roomId) return parsed;
       }
     } catch {}
     return null;
   }
 
-  async function resolveRoom(webRid) {
-    const clean = String(webRid || '').trim();
-    if (!clean) throw new Error('抖音直播间号为空');
+  async function resolveRoom(rawRid) {
+    const clean = extractDouyinWebRid(rawRid);
+    if (!clean) throw new Error('抖音直播间链接或房间号无效，请重新填写');
 
     try {
       const res = await fetchFn(`https://live.douyin.com/${encodeURIComponent(clean)}`, {
@@ -112,7 +138,8 @@ export function createDouyinClient({
     return `wss://${host}.douyin.com/webcast/im/push/v2/?${params.toString()}`;
   }
 
-  function createStream({ webRid, onEvent = () => {}, onStatus = () => {} }) {
+  function createStream({ webRid: rawRid, onEvent = () => {}, onStatus = () => {} }) {
+    const webRid = extractDouyinWebRid(rawRid);
     let closed = false;
     let ws = null;
     let attempt = 0;

@@ -184,12 +184,69 @@ test('douyin-protocol decodes gzipped PushFrame ChatMessage + EmojiChatMessage +
   assert.equal(roomMeta.roomId, '7345678901234567890');
   assert.equal(roomMeta.nickname, '抖音主播A');
   assert.equal(roomMeta.status, 2);
+
+  // Also extract roomId from Flight self.__pace_f multi-line escaped chunk
+  const flightHtml = `<script>self.__pace_f.push([1,"a:null\\n15:{\\"roomId\\":\\"7412345678901234567\\",\\"user_unique_id\\":\\"7311111111111111111\\"}"])</script>`;
+  const flightMeta = parseDouyinRoomHtml(flightHtml, '200525029536');
+  assert.equal(flightMeta.roomId, '7412345678901234567');
+  assert.equal(flightMeta.userUniqueId, '7311111111111111111');
 });
 
-test('kick-protocol filters Deleted by a moderator and resolves native + 7TV + zero-width + GIF', async () => {
-  const { parseKickPusherFrame, ingest7tvEmoteSet, isDeletedPlaceholder } = await loadEsm(
+test('kick-protocol decodes Centrifugo ping/replies/publications and Pusher 4001 error', async () => {
+  const { parseKickPusherFrame, parseKickCentrifugoFrames, ingest7tvEmoteSet, isDeletedPlaceholder } = await loadEsm(
     'src/protocols/kick-protocol.mjs',
   );
+
+  const err4001 = parseKickPusherFrame(
+    JSON.stringify({
+      event: 'pusher:error',
+      data: { code: 4001, message: 'App key 32cbd69e4b950bf97679 not in this cluster' },
+    }),
+  );
+  assert.equal(err4001.kind, 'pusher-error');
+  assert.equal(err4001.code, 4001);
+
+  const centRaw = [
+    '{}',
+    JSON.stringify({ id: 1, connect: { client: 'cid-1', ping: 25, pong: true } }),
+    JSON.stringify({ id: 2, subscribe: {} }),
+    JSON.stringify({
+      push: {
+        channel: 'chatrooms.456.v2',
+        pub: {
+          data: {
+            event: 'App\\Events\\ChatMessageEvent',
+            data: JSON.stringify({
+              id: 'cent-msg-1',
+              content: 'Centrifugo works [emote:37226:KEKW]',
+              sender: { id: 88, username: 'CentUser', identity: { color: '#53fc18' } },
+            }),
+          },
+        },
+      },
+    }),
+    JSON.stringify({
+      push: {
+        channel: 'chatrooms.456.v2',
+        pub: {
+          data: {
+            event: 'App\\Events\\MessageDeletedEvent',
+            data: JSON.stringify({ message: { id: 'cent-msg-1' } }),
+          },
+        },
+      },
+    }),
+  ].join('\n');
+
+  const centEvents = parseKickCentrifugoFrames(centRaw, null, 1700000020000);
+  assert.equal(centEvents[0].kind, 'centrifugo-ping');
+  assert.equal(centEvents[1].kind, 'centrifugo-connected');
+  assert.equal(centEvents[2].kind, 'centrifugo-subscribed');
+  assert.equal(centEvents[3].kind, 'danmaku');
+  assert.equal(centEvents[3].message.id, 'cent-msg-1');
+  assert.equal(centEvents[3].message.hasMedia, true);
+  assert.equal(centEvents[4].kind, 'delete');
+  assert.deepEqual(centEvents[4].ids, ['cent-msg-1']);
 
   assert.equal(isDeletedPlaceholder(': Deleted by a moderator'), true);
   assert.equal(isDeletedPlaceholder('Deleted by the broadcaster'), true);

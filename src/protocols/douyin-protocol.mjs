@@ -361,6 +361,56 @@ function findObject(roots, predicate) {
   return null;
 }
 
+const DOUYIN_RESERVED_SEGMENTS = new Set([
+  'follow',
+  'live',
+  'root',
+  'discover',
+  'category',
+  'hot',
+  'channel',
+  'square',
+  'search',
+]);
+
+export function extractDouyinWebRid(raw) {
+  const str = String(raw || '').trim();
+  if (!str) return '';
+  if (/^[\w-]{3,64}$/.test(str)) {
+    return DOUYIN_RESERVED_SEGMENTS.has(str.toLowerCase()) ? '' : str;
+  }
+  try {
+    const u = new URL(/^https?:\/\//i.test(str) ? str : 'https://' + str);
+    if (!/(^|\.)douyin\.com$/i.test(u.hostname)) return '';
+    const qRid = u.searchParams.get('web_rid');
+    if (qRid && /^[\w-]{3,64}$/.test(qRid) && !DOUYIN_RESERVED_SEGMENTS.has(qRid.toLowerCase())) {
+      return qRid;
+    }
+    const parts = u.pathname.split('/').filter(Boolean);
+    const liveIdx = parts.findIndex((seg) => seg.toLowerCase() === 'live');
+    if (liveIdx >= 0 && parts[liveIdx + 1]) {
+      const cand = parts[liveIdx + 1];
+      if (/^[\w-]{3,64}$/.test(cand) && !DOUYIN_RESERVED_SEGMENTS.has(cand.toLowerCase())) {
+        return cand;
+      }
+    }
+    if (u.hostname.toLowerCase() === 'live.douyin.com' && parts.length) {
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const seg = parts[i];
+        if (/^[\w-]{3,64}$/.test(seg) && !DOUYIN_RESERVED_SEGMENTS.has(seg.toLowerCase())) {
+          return seg;
+        }
+      }
+    }
+    for (const seg of parts) {
+      if (/^\d{5,24}$/.test(seg)) return seg;
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
 export function parseDouyinRoomHtml(html, webRid = '') {
   const text = String(html || '');
   const roots = [];
@@ -368,10 +418,13 @@ export function parseDouyinRoomHtml(html, webRid = '') {
   for (const m of text.matchAll(/self\.(?:__pace_f|__next_f)\.push\(\[\d+,/g)) {
     const raw = jsonAt(text, m.index + m[0].length);
     if (typeof raw === 'string') {
-      const body = raw.replace(/^\w+:/, '');
-      try {
-        roots.push(JSON.parse(body));
-      } catch {}
+      for (const line of raw.split('\n')) {
+        const body = line.replace(/^[0-9a-z]+:[A-Z]?/i, '').trim();
+        if (!body || (body[0] !== '{' && body[0] !== '[')) continue;
+        try {
+          roots.push(JSON.parse(body));
+        } catch {}
+      }
     } else if (raw && typeof raw === 'object') {
       roots.push(raw);
     }
@@ -386,7 +439,7 @@ export function parseDouyinRoomHtml(html, webRid = '') {
     }
   }
 
-  const wanted = String(webRid || '').trim();
+  const wanted = extractDouyinWebRid(webRid) || String(webRid || '').trim();
   const matching = wanted ? findObject(roots, (n) => n.room && n.anchor && String(n.web_rid) === wanted) : null;
   const store =
     matching ||
@@ -407,9 +460,12 @@ export function parseDouyinRoomHtml(html, webRid = '') {
     }
   }
 
-  // Fallback regex lookup inside Next/Vite hydration chunks
+  // Fallback regex lookup inside escaped or unescaped Flight/SSR chunks
   if (!roomId) {
-    const m = /"(?:roomId|room_id|id_str)"\s*:\s*"(\d{10,24})"/i.exec(text);
+    const m =
+      /\\?"(?:roomId|room_id)\\?"\s*:\s*\\?"(\d{15,24})\\?"/i.exec(text) ||
+      /\\?"room\\?"\s*:\s*\{[^}]{0,500}?\\?"id_str\\?"\s*:\s*\\?"(\d{15,24})\\?"/i.exec(text) ||
+      /"(?:roomId|room_id|id_str)"\s*:\s*"(\d{10,24})"/i.exec(text);
     if (m) roomId = m[1];
   }
 
@@ -417,7 +473,7 @@ export function parseDouyinRoomHtml(html, webRid = '') {
   const uidCand = store?.user_unique_id || findObject(roots, (n) => typeof n.user_unique_id === 'string')?.user_unique_id;
   if (typeof uidCand === 'string' && /^\d+$/.test(uidCand)) userUniqueId = uidCand;
   if (!userUniqueId) {
-    const m = /"user_unique_id"\s*:\s*"(\d{8,24})"/.exec(text);
+    const m = /\\?"user_unique_id\\?"\s*:\s*\\?"(\d{8,24})\\?"/.exec(text);
     if (m) userUniqueId = m[1];
   }
 

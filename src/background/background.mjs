@@ -5,6 +5,7 @@ import { createBiliClient } from './bili-client.mjs';
 import { createKickClient } from './kick-client.mjs';
 import { createDouyinClient } from './douyin-client.mjs';
 import { createTabSender } from './tab-sender.mjs';
+import { extractDouyinWebRid } from '../protocols/douyin-protocol.mjs';
 
 const ROOMS_STORAGE_KEY = 'tcd_rooms_v1';
 
@@ -164,7 +165,14 @@ async function loadRooms() {
   try {
     const res = await chrome.storage.local.get(ROOMS_STORAGE_KEY);
     if (res && res[ROOMS_STORAGE_KEY]) {
-      currentRooms = { ...structuredClone(DEFAULT_ROOMS), ...res[ROOMS_STORAGE_KEY] };
+      const merged = { ...structuredClone(DEFAULT_ROOMS), ...res[ROOMS_STORAGE_KEY] };
+      const rawDy = merged.douyin?.room || '';
+      const fixedDy = extractDouyinWebRid(rawDy);
+      if (rawDy !== fixedDy) {
+        merged.douyin = { ...merged.douyin, room: fixedDy };
+        chrome.storage.local.set({ [ROOMS_STORAGE_KEY]: merged }).catch(() => {});
+      }
+      currentRooms = merged;
     }
   } catch {}
 }
@@ -173,7 +181,7 @@ async function setupHeaderRules() {
   const domains = [
     ['bilibili.com', 'https://live.bilibili.com/', ['xmlhttprequest', 'websocket']],
     ['douyin.com', 'https://live.douyin.com/', ['xmlhttprequest', 'websocket']],
-    ['kick.com', 'https://kick.com/', ['xmlhttprequest']],
+    ['kick.com', 'https://kick.com/', ['xmlhttprequest', 'websocket']],
   ];
   const makeRules = (withWs) =>
     domains.map(([domain, referer, types], idx) => ({
@@ -280,6 +288,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await kick.writeCachedChannel(slug, { chatroomId, userId });
           if (currentRooms.kick?.enabled && currentRooms.kick?.room === slug && streamState.kick.status.state !== 'connected') {
             syncStreams(true);
+          }
+        }
+        return { ok: true };
+      }
+
+      case 'tcd:kick-live-frame': {
+        const slug = String(msg.slug || '').trim().toLowerCase();
+        if (slug && currentRooms.kick?.enabled && currentRooms.kick?.room === slug) {
+          const ok = kick.ingestLiveFrame(slug, msg.raw, handleStreamEvent);
+          if (ok && streamState.kick.status.state !== 'connected') {
+            handleStreamStatus({
+              platform: 'kick',
+              room: slug,
+              state: 'connected',
+              text: '已连接 Kick (页面桥接)',
+            });
           }
         }
         return { ok: true };

@@ -1,6 +1,8 @@
 // Muted & video-stream-blocked background tab sender for Douyin (and remote Kick fallback).
 // Ports FreeCast platform-sender.mjs safety model: handles native CSRF / a_bogus / moderation inside real page context.
 
+import { extractDouyinWebRid } from '../protocols/douyin-protocol.mjs';
+
 export function createTabSender(browser = chrome) {
   const SESSION_KEY = 'tcd-send-tabs-v1';
   const BLOCK_RULE_BASE = 30000;
@@ -16,7 +18,12 @@ export function createTabSender(browser = chrome) {
     throw new Error('不支持后台标签页发送的平台');
   }
 
-  function urlMatchesRoom(tabUrl, targetUrl) {
+  function urlMatchesRoom(tabUrl, platform, room, targetUrl) {
+    if (!tabUrl) return false;
+    if (platform === 'douyin') {
+      const rid = extractDouyinWebRid(tabUrl);
+      return Boolean(rid && rid === room);
+    }
     try {
       const a = new URL(tabUrl);
       const b = new URL(targetUrl);
@@ -45,7 +52,7 @@ export function createTabSender(browser = chrome) {
     if (record.owned) {
       try {
         const t = await browser.tabs.get(record.id);
-        if (urlMatchesRoom(t.url || t.pendingUrl, record.roomUrl)) {
+        if (urlMatchesRoom(t.url || t.pendingUrl, record.platform, record.room, record.roomUrl)) {
           await browser.tabs.remove(record.id);
         }
       } catch {}
@@ -62,10 +69,13 @@ export function createTabSender(browser = chrome) {
 
     // 1. Reuse user's own already-open matching tab if available (never auto-close or mute user tab)
     try {
-      const pattern = platform === 'douyin' ? ['https://live.douyin.com/*'] : ['https://kick.com/*', 'https://*.kick.com/*'];
+      const pattern =
+        platform === 'douyin'
+          ? ['https://live.douyin.com/*', 'https://www.douyin.com/*']
+          : ['https://kick.com/*', 'https://*.kick.com/*'];
       const openTabs = await browser.tabs.query({ url: pattern });
       const existingUserTab = openTabs.find(
-        (t) => t.id !== ownerTabId && urlMatchesRoom(t.url, targetUrl),
+        (t) => t.id !== ownerTabId && urlMatchesRoom(t.url, platform, room, targetUrl),
       );
       if (existingUserTab) {
         return { tab: existingUserTab, owned: false, targetUrl };
@@ -78,7 +88,7 @@ export function createTabSender(browser = chrome) {
     if (found) {
       try {
         const t = await browser.tabs.get(found.id);
-        if (urlMatchesRoom(t.url || t.pendingUrl, targetUrl)) {
+        if (urlMatchesRoom(t.url || t.pendingUrl, platform, room, targetUrl)) {
           return { tab: t, owned: true, targetUrl };
         }
       } catch {}
@@ -97,7 +107,7 @@ export function createTabSender(browser = chrome) {
     const tab = await browser.tabs.create({ url: 'about:blank', active: false });
     await browser.tabs.update(tab.id, { muted: true, autoDiscardable: false }).catch(() => {});
 
-    records.push({ id: tab.id, ownerTabId, roomUrl: targetUrl, owned: true });
+    records.push({ id: tab.id, ownerTabId, platform, room, roomUrl: targetUrl, owned: true });
     await writeRecords(records);
 
     try {
@@ -122,15 +132,21 @@ export function createTabSender(browser = chrome) {
     return { tab, owned: true, targetUrl };
   }
 
-  async function waitForTabReady(tabId, targetUrl, timeoutMs = 20000) {
+  async function waitForTabReady(tabId, platform, room, targetUrl, timeoutMs = 20000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const tab = await browser.tabs.get(tabId);
       const curUrl = tab.pendingUrl || tab.url || '';
-      if (tab.status === 'complete' && !tab.pendingUrl && urlMatchesRoom(tab.url, targetUrl)) {
+      if (tab.status === 'complete' && !tab.pendingUrl && urlMatchesRoom(tab.url, platform, room, targetUrl)) {
         return tab;
       }
-      if (tab.status === 'complete' && !tab.pendingUrl && curUrl && curUrl !== 'about:blank' && !urlMatchesRoom(curUrl, targetUrl)) {
+      if (
+        tab.status === 'complete' &&
+        !tab.pendingUrl &&
+        curUrl &&
+        curUrl !== 'about:blank' &&
+        !urlMatchesRoom(curUrl, platform, room, targetUrl)
+      ) {
         return null;
       }
       await new Promise((r) => setTimeout(r, 250));
@@ -345,7 +361,11 @@ export function createTabSender(browser = chrome) {
     return { ok: true, submitted: true };
   }
 
-  async function send({ platform, room, text, ownerTabId }) {
+  async function send({ platform, room: rawRoom, text, ownerTabId }) {
+    const room = platform === 'douyin' ? extractDouyinWebRid(rawRoom) : String(rawRoom || '').trim();
+    if (!room) {
+      return { ok: false, error: '目标直播间配置无效，请检查房间号或链接' };
+    }
     const cleanText = String(text || '').trim();
     if (!cleanText || [...cleanText].length > 100) {
       return { ok: false, error: '请输入 1–100 字的弹幕内容' };
@@ -358,7 +378,7 @@ export function createTabSender(browser = chrome) {
     sending = true;
     try {
       const { tab, owned, targetUrl } = await ensureRoomTab(platform, room, ownerTabId);
-      const ready = await waitForTabReady(tab.id, targetUrl);
+      const ready = await waitForTabReady(tab.id, platform, room, targetUrl);
       if (!ready) {
         return {
           ok: false,

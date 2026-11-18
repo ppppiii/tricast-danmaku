@@ -2,7 +2,7 @@
   'use strict';
 
   if (document.documentElement.hasAttribute('data-tcd-running')) return;
-  document.documentElement.setAttribute('data-tcd-running', '1.0.0');
+  document.documentElement.setAttribute('data-tcd-running', '1.0.1');
 
   const TCD = globalThis.__TCD__;
   if (!TCD) return;
@@ -323,7 +323,7 @@
     panelUi?.populateRoomsDialog(rooms);
   });
 
-  // Forward passive MAIN-world Kick chatroom metadata to Service Worker
+  // Forward passive MAIN-world Kick chatroom metadata and live frames to Service Worker
   window.addEventListener('tcd:kick-meta', (e) => {
     const d = e?.detail;
     if (!d?.slug || !d?.chatroomId) return;
@@ -333,6 +333,18 @@
         slug: d.slug,
         chatroomId: d.chatroomId,
         userId: d.userId || '',
+      })
+      .catch(() => {});
+  });
+
+  window.addEventListener('tcd:kick-live-frame', (e) => {
+    const d = e?.detail;
+    if (!d?.slug || !d?.raw) return;
+    chrome.runtime
+      .sendMessage({
+        type: 'tcd:kick-live-frame',
+        slug: d.slug,
+        raw: d.raw,
       })
       .catch(() => {});
   });

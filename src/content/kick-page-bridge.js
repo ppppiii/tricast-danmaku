@@ -1,6 +1,6 @@
-// Passive MAIN-world metadata bridge on kick.com:
-// Captures Kick chatroomId & userId from Pusher subscriptions and /api/v2/channels/<slug> fetches
-// so the Background Service Worker can connect Kick chat even from a Bilibili tab without extra fetches.
+// Passive MAIN-world metadata & realtime frame bridge on kick.com:
+// Captures Kick chatroomId & userId from Pusher/Centrifugo subscriptions and /api/v2/channels/<slug> fetches,
+// and forwards live Centrifugo/Pusher chat events cleanly when viewing kick.com.
 
 (() => {
   'use strict';
@@ -12,6 +12,13 @@
     if (!meta || !meta.chatroomId) return;
     try {
       window.dispatchEvent(new CustomEvent('tcd:kick-meta', { detail: meta }));
+    } catch {}
+  }
+
+  function emitLiveFrame(slug, raw) {
+    if (!slug || typeof raw !== 'string') return;
+    try {
+      window.dispatchEvent(new CustomEvent('tcd:kick-live-frame', { detail: { slug, raw } }));
     } catch {}
   }
 
@@ -53,21 +60,50 @@
     };
   }
 
-  // Wrap WebSocket.prototype.send passively to spot chatrooms.<id>.v2 subscriptions
-  const origSend = WebSocket.prototype.send;
-  WebSocket.prototype.send = function (data) {
-    try {
-      if (typeof data === 'string' && data.includes('pusher:subscribe') && data.includes('chatroom')) {
-        const parsed = JSON.parse(data);
-        const channel = String(parsed?.data?.channel || '');
-        const m = /chatrooms\.(\d+)\.v2|chatroom_(\d+)/.exec(channel);
-        const cid = m?.[1] || m?.[2];
-        const slug = currentSlug();
-        if (cid && slug) {
-          emitMeta({ slug, chatroomId: cid, userId: '' });
+  // Wrap WebSocket via Proxy to inspect both Centrifugo & Pusher outgoing subscribe frames and incoming chat frames
+  const NativeWebSocket = window.WebSocket;
+  if (typeof NativeWebSocket === 'function' && typeof Proxy === 'function') {
+    window.WebSocket = new Proxy(NativeWebSocket, {
+      construct(target, args, newTarget) {
+        const ws = Reflect.construct(target, args, newTarget);
+        const wsUrl = String(args?.[0] || '');
+        const isKickRealtime = /(?:platform\.kick\.com|pusher\.com)/i.test(wsUrl);
+
+        if (isKickRealtime) {
+          ws.addEventListener('message', (event) => {
+            try {
+              const raw = typeof event.data === 'string' ? event.data : '';
+              if (
+                raw &&
+                (raw.includes('ChatMessageEvent') ||
+                  raw.includes('MessageDeletedEvent') ||
+                  raw.includes('ChatroomClearEvent'))
+              ) {
+                emitLiveFrame(currentSlug(), raw);
+              }
+            } catch {}
+          });
         }
-      }
-    } catch {}
-    return origSend.apply(this, arguments);
-  };
+
+        return ws;
+      },
+    });
+  }
+
+  const origSend = NativeWebSocket?.prototype?.send;
+  if (typeof origSend === 'function') {
+    NativeWebSocket.prototype.send = function (data) {
+      try {
+        if (typeof data === 'string') {
+          const m = /chatrooms\.(\d+)\.v2|chatroom_(\d+)/.exec(data);
+          const cid = m?.[1] || m?.[2];
+          const slug = currentSlug();
+          if (cid && slug && (data.includes('pusher:subscribe') || data.includes('"subscribe"'))) {
+            emitMeta({ slug, chatroomId: cid, userId: '' });
+          }
+        }
+      } catch {}
+      return origSend.apply(this, arguments);
+    };
+  }
 })();

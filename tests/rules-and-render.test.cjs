@@ -69,6 +69,15 @@ test('state defaults use restrained Bilibili-grade limits and normalize tri-plat
   assert.equal(state.normalizeRoomInput('bilibili', 'https://live.bilibili.com/21452505?spm=1'), '21452505');
   assert.equal(state.normalizeRoomInput('kick', 'https://kick.com/xQc'), 'xqc');
   assert.equal(state.normalizeRoomInput('douyin', 'https://live.douyin.com/80017709309'), '80017709309');
+  assert.equal(
+    state.normalizeRoomInput(
+      'douyin',
+      'https://www.douyin.com/follow/live/200525029536?anchor_id=470203709260235',
+    ),
+    '200525029536',
+  );
+  assert.equal(state.normalizeRoomInput('douyin', 'https://www.douyin.com/root/live/200525029536'), '200525029536');
+  assert.equal(state.normalizeRoomInput('douyin', 'follow'), '');
 
   const rooms = state.sanitizeRooms({
     presets: [

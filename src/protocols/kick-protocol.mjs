@@ -203,6 +203,14 @@ export function parseKickPusherFrame(rawData, thirdPartyEmotes = null, receivedA
     };
   }
 
+  if (frame.event === 'pusher:error' && data) {
+    return {
+      kind: 'pusher-error',
+      code: Number(data.code || 0),
+      message: String(data.message || ''),
+    };
+  }
+
   if (frame.event.endsWith('MessageDeletedEvent') && data) {
     const deletedId = data.message?.id ?? data.id;
     if (deletedId != null) return { kind: 'delete', ids: [String(deletedId)] };
@@ -213,4 +221,57 @@ export function parseKickPusherFrame(rawData, thirdPartyEmotes = null, receivedA
   }
 
   return { kind: 'system', event: frame.event, data };
+}
+
+export function parseKickCentrifugoFrames(rawText, thirdPartyEmotes = null, receivedAt = Date.now()) {
+  const lines = String(rawText || '')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const events = [];
+
+  for (const line of lines) {
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!obj || typeof obj !== 'object') continue;
+
+    // Centrifugo server ping frame is "{}"
+    if (Object.keys(obj).length === 0) {
+      events.push({ kind: 'centrifugo-ping' });
+      continue;
+    }
+    if (obj.connect) {
+      events.push({ kind: 'centrifugo-connected', connect: obj.connect });
+      continue;
+    }
+    if (obj.subscribe !== undefined && !obj.error) {
+      events.push({ kind: 'centrifugo-subscribed', id: obj.id, subscribe: obj.subscribe });
+      continue;
+    }
+    if (obj.refresh) {
+      events.push({ kind: 'centrifugo-refreshed', id: obj.id, refresh: obj.refresh });
+      continue;
+    }
+    if (obj.error) {
+      events.push({ kind: 'centrifugo-error', id: obj.id, error: obj.error });
+      continue;
+    }
+    if (obj.push?.disconnect) {
+      events.push({ kind: 'centrifugo-disconnect', disconnect: obj.push.disconnect });
+      continue;
+    }
+    const pubData = obj.push?.pub?.data;
+    if (pubData) {
+      const parsed = parseKickPusherFrame(pubData, thirdPartyEmotes, receivedAt);
+      if (parsed && ['danmaku', 'delete', 'clear'].includes(parsed.kind)) {
+        events.push(parsed);
+      }
+    }
+  }
+
+  return events;
 }

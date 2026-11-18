@@ -64,6 +64,56 @@
     return Math.max(min, Math.min(max, value));
   }
 
+  const DOUYIN_RESERVED_SEGMENTS = new Set([
+    'follow',
+    'live',
+    'root',
+    'discover',
+    'category',
+    'hot',
+    'channel',
+    'square',
+    'search',
+  ]);
+
+  function extractDouyinWebRid(raw) {
+    const str = String(raw || '').trim();
+    if (!str) return '';
+    if (/^[\w-]{3,64}$/.test(str)) {
+      return DOUYIN_RESERVED_SEGMENTS.has(str.toLowerCase()) ? '' : str;
+    }
+    try {
+      const u = new URL(/^https?:\/\//i.test(str) ? str : 'https://' + str);
+      if (!/(^|\.)douyin\.com$/i.test(u.hostname)) return '';
+      const qRid = u.searchParams.get('web_rid');
+      if (qRid && /^[\w-]{3,64}$/.test(qRid) && !DOUYIN_RESERVED_SEGMENTS.has(qRid.toLowerCase())) {
+        return qRid;
+      }
+      const parts = u.pathname.split('/').filter(Boolean);
+      const liveIdx = parts.findIndex((seg) => seg.toLowerCase() === 'live');
+      if (liveIdx >= 0 && parts[liveIdx + 1]) {
+        const cand = parts[liveIdx + 1];
+        if (/^[\w-]{3,64}$/.test(cand) && !DOUYIN_RESERVED_SEGMENTS.has(cand.toLowerCase())) {
+          return cand;
+        }
+      }
+      if (u.hostname.toLowerCase() === 'live.douyin.com' && parts.length) {
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const seg = parts[i];
+          if (/^[\w-]{3,64}$/.test(seg) && !DOUYIN_RESERVED_SEGMENTS.has(seg.toLowerCase())) {
+            return seg;
+          }
+        }
+      }
+      for (const seg of parts) {
+        if (/^\d{5,24}$/.test(seg)) return seg;
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
   function normalizeRoomInput(platform, raw) {
     const str = String(raw || '').trim();
     if (!str) return '';
@@ -102,18 +152,7 @@
     }
 
     if (platform === 'douyin') {
-      if (/^[\w-]{3,64}$/.test(str)) {
-        return str;
-      }
-      try {
-        const u = new URL(/^https?:\/\//i.test(str) ? str : 'https://' + str);
-        if (!/(^|\.)douyin\.com$/i.test(u.hostname)) return '';
-        const parts = u.pathname.split('/').filter(Boolean);
-        const rid = parts[0] || '';
-        return /^[\w-]{3,64}$/.test(rid) ? rid : '';
-      } catch {
-        return '';
-      }
+      return extractDouyinWebRid(str);
     }
 
     return '';
@@ -178,7 +217,7 @@
         if (!slug) return null;
         return roomsData.presets.find((p) => p.kick && p.kick === slug) || null;
       }
-      if (u.hostname === 'live.douyin.com') {
+      if (u.hostname.endsWith('douyin.com')) {
         const rid = normalizeRoomInput('douyin', u.href);
         if (!rid) return null;
         return roomsData.presets.find((p) => p.douyin && p.douyin === rid) || null;
@@ -409,6 +448,7 @@
     DEFAULT_SETTINGS,
     DEFAULT_ROOMS,
     clamp,
+    extractDouyinWebRid,
     normalizeRoomInput,
     sanitizeRooms,
     matchPresetForUrl,
