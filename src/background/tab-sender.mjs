@@ -284,33 +284,40 @@ export function createTabSender(browser = chrome) {
     }
 
     field.focus();
-    if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
-      const proto = field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-      if (setter) setter.call(field, text);
-      else field.value = text;
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      field.dispatchEvent(new Event('change', { bubbles: true }));
-    } else {
-      let ok = false;
-      try {
-        const sel = getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(field);
-        sel.removeAllRanges();
-        sel.addRange(range);
-        ok = document.execCommand('insertText', false, text);
-      } catch {
-        ok = false;
-      }
-      if (!ok || !readVal(field)) {
+    if (existing !== text) {
+      if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
+        const proto = field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        if (setter) setter.call(field, text);
+        else field.value = text;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
         try {
-          field.dispatchEvent(
-            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }),
-          );
+          const sel = getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(field);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          document.execCommand('insertText', false, text);
         } catch {}
-        if (!readVal(field)) field.textContent = text;
-        field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+        if (!readVal(field)) {
+          await wait(35);
+        }
+        if (!readVal(field)) {
+          try {
+            field.dispatchEvent(
+              new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }),
+            );
+          } catch {}
+          if (!readVal(field)) {
+            await wait(35);
+          }
+          if (!readVal(field)) {
+            field.textContent = text;
+            field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+          }
+        }
       }
     }
 

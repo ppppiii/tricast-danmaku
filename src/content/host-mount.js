@@ -263,40 +263,51 @@ html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
       return { ok: false, error: `${platformLabel} 聊天框已有未发送草稿，未覆盖` };
     }
 
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     field.focus();
-    if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
-      const proto = field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-      if (setter) setter.call(field, clean);
-      else field.value = clean;
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      field.dispatchEvent(new Event('change', { bubbles: true }));
-    } else {
-      let inserted = false;
-      try {
-        const sel = typeof getSelection === 'function' ? getSelection() : null;
-        if (sel && doc.createRange) {
-          const range = doc.createRange();
-          range.selectNodeContents(field);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-        inserted = doc.execCommand?.('insertText', false, clean) || false;
-      } catch {
-        inserted = false;
-      }
-      if (!inserted || !readComposerValue(field)) {
+    if (existing !== clean) {
+      if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
+        const proto = field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        if (setter) setter.call(field, clean);
+        else field.value = clean;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
         try {
-          field.dispatchEvent(
-            new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: clean }),
-          );
+          const sel = typeof getSelection === 'function' ? getSelection() : null;
+          if (sel && doc.createRange) {
+            const range = doc.createRange();
+            range.selectNodeContents(field);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+          doc.execCommand?.('insertText', false, clean);
         } catch {}
-        if (!readComposerValue(field)) field.textContent = clean;
-        field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: clean }));
+        // Lexical (Kick) intercepts execCommand's beforeinput with preventDefault(),
+        // causing execCommand to return false even though the text was already inserted.
+        // Only fall back when the editor DOM is still empty after letting it commit.
+        if (!readComposerValue(field)) {
+          await wait(35);
+        }
+        if (!readComposerValue(field)) {
+          try {
+            field.dispatchEvent(
+              new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: clean }),
+            );
+          } catch {}
+          if (!readComposerValue(field)) {
+            await wait(35);
+          }
+          if (!readComposerValue(field)) {
+            field.textContent = clean;
+            field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: clean }));
+          }
+        }
       }
     }
 
-    await new Promise((r) => setTimeout(r, waitMs));
+    await wait(waitMs);
     let btn = null;
     for (const sel of sendButtonSelectors) {
       const hit = Array.from(doc.querySelectorAll(sel)).find(isElVisible);

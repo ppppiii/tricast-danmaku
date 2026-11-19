@@ -354,3 +354,63 @@ test('panelUi chat feed appends tri-platform messages, respects filter state, an
   ui.clearChatFeed();
   assert.equal(feedList.querySelectorAll('.tcd-feed-item').length, 0);
 });
+
+test('submitKickLocalChat does not double-insert when Lexical execCommand returns false after inserting text', async () => {
+  let submitted = '';
+  let beforeInputCount = 0;
+
+  const field = {
+    isConnected: true,
+    tagName: 'DIV',
+    textContent: '',
+    innerText: '',
+    getClientRects: () => [{ width: 100, height: 24 }],
+    getAttribute: (k) => (k === 'contenteditable' ? 'true' : null),
+    focus() {},
+    closest: () => null,
+    dispatchEvent(ev) {
+      if (ev?.type === 'beforeinput') {
+        beforeInputCount++;
+        // Lexical appends data on beforeinput
+        field.textContent += ev.data || '';
+        field.innerText = field.textContent;
+      }
+      return true;
+    },
+  };
+
+  const sendBtn = {
+    isConnected: true,
+    disabled: false,
+    className: '',
+    getClientRects: () => [{ width: 40, height: 24 }],
+    getAttribute: () => null,
+    click() {
+      submitted = field.textContent;
+      field.textContent = '';
+      field.innerText = '';
+    },
+  };
+
+  const fakeDoc = {
+    querySelectorAll(sel) {
+      if (sel === '[data-testid="chat-input"]') return [field];
+      if (sel === '#send-message-button') return [sendBtn];
+      return [];
+    },
+    execCommand(cmd, _ui, val) {
+      if (cmd === 'insertText') {
+        // Simulate Lexical: intercepts beforeinput with preventDefault(), inserts text, so execCommand returns false
+        field.textContent += val;
+        field.innerText = field.textContent;
+        return false;
+      }
+      return false;
+    },
+  };
+
+  const res = await hostMount.submitKickLocalChat('ABAB', fakeDoc);
+  assert.equal(res.ok, true);
+  assert.equal(submitted, 'ABAB');
+  assert.equal(beforeInputCount, 0);
+});
