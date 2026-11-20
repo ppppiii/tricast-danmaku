@@ -129,17 +129,17 @@
 
       const overlayRect = overlay.getBoundingClientRect();
       const origin = overlayRect.left;
-      const gap = Math.max(24, settings.danmakuSize * 1.1) * (100 / density);
+      const gap = Math.max(18, settings.danmakuSize * 0.9) * (100 / density);
       const heldLane = getHeldLane();
       const children = Array.from(overlay.children).filter((el) => el !== bullet);
 
-      const candidateCount = maxStartLane + 1;
       let available;
       let bestFallbackLane;
       let bestFallbackMaxRight = Infinity;
 
-      for (let i = 0; i < candidateCount; i++) {
-        const lane = (nextLane + i) % candidateCount;
+      // Bilibili-native top-down greedy lane packing: always try from row 0 first so multiple
+      // bullets flow cleanly on the same row instead of scattering one bullet per row.
+      for (let lane = 0; lane <= maxStartLane; lane++) {
         const endLane = lane + span - 1;
 
         if (
@@ -179,7 +179,6 @@
       }
 
       const lane = available;
-      nextLane = (lane + 1) % candidateCount;
       bullet.dataset.lane = String(lane);
       bullet.dataset.laneSpan = String(span);
 
