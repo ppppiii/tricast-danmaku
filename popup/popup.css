@@ -55,6 +55,88 @@ body {
   color: var(--a);
 }
 
+.brand small.off {
+  color: #f87171;
+}
+
+.power-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.power-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--a);
+}
+
+.power-label.off {
+  color: var(--muted);
+}
+
+.update-banner {
+  margin-top: 9px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgba(83, 252, 24, 0.08);
+  border: 1px solid rgba(83, 252, 24, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.update-banner[hidden] {
+  display: none;
+}
+
+.update-info {
+  min-width: 0;
+}
+
+.update-info strong {
+  display: block;
+  font-size: 12px;
+  color: #fff;
+}
+
+.update-info small {
+  display: block;
+  font-size: 10.5px;
+  color: #cbd5e1;
+}
+
+.update-actions {
+  display: inline-flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.update-actions button {
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #202530;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.update-actions button.primary {
+  background: var(--a);
+  color: #0d1608;
+  border: 0;
+  font-weight: 700;
+}
+
+#mainControls.is-off {
+  opacity: 0.42;
+  pointer-events: none;
+  filter: grayscale(0.35);
+}
+
 .switch {
   position: relative;
   display: inline-block;
@@ -283,4 +365,43 @@ code {
   border-radius: 4px;
   background: #1e222b;
   color: #d8e1ec;
+}
+
+.ver-bar {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ver-status {
+  flex: 1;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--a);
+}
+
+.link-btn {
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.link-btn:hover:not(:disabled) {
+  border-color: var(--a);
+  color: var(--a);
+}
+
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

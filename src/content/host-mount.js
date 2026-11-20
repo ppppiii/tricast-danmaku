@@ -408,6 +408,7 @@ html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
     let paused = false;
     let webFullscreen = false;
     let suppressPref = false;
+    let enabled = true;
     let lastHref = win?.location?.href || '';
 
     function createHost() {
@@ -432,7 +433,16 @@ html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
         const sendBar = shadowRoot?.getElementById('tcdSendBar');
         const chatFeed = shadowRoot?.getElementById('tcdChatFeed');
         const tip = shadowRoot?.getElementById('tcdOnboardingTip');
-        if ((panel && !panel.hidden) || (sendBar && !sendBar.hidden) || (chatFeed && !chatFeed.hidden) || (tip && !tip.hidden)) return;
+        const updTip = shadowRoot?.getElementById('tcdUpdateTip');
+        if (
+          (panel && !panel.hidden) ||
+          (sendBar && !sendBar.hidden) ||
+          (chatFeed && !chatFeed.hidden) ||
+          (tip && !tip.hidden) ||
+          (updTip && !updTip.hidden)
+        ) {
+          return;
+        }
         player.classList.remove('tcd-show-trigger');
         player.classList.add('tcd-controls-hidden');
       }, 2800);
@@ -442,7 +452,7 @@ html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
       if (!doc?.documentElement) return;
       doc.documentElement.removeAttribute(HIDE_BILI_ATTR);
       doc.documentElement.removeAttribute(HIDE_DOUYIN_ATTR);
-      if (!suppressPref) return;
+      if (!enabled || !suppressPref) return;
       const { site, room } = detectHostSite(win?.location);
       if (!room) return;
       if (site === 'bilibili') {
@@ -571,7 +581,7 @@ html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
         onRouteChange(siteInfo);
       }
 
-      if (!siteInfo.room) {
+      if (!enabled || !siteInfo.room) {
         unmountActiveHost();
         return false;
       }
@@ -633,10 +643,21 @@ html[${HIDE_DOUYIN_ATTR}="1"] .douyin-player-danmu {
       shadowRoot = null;
     }
 
+    function setEnabled(next) {
+      enabled = Boolean(next);
+      if (!enabled) {
+        unmountActiveHost();
+      } else {
+        syncMount();
+      }
+    }
+
     return {
       start,
       stop,
       syncMount,
+      setEnabled,
+      isEnabled: () => enabled,
       wakeTrigger,
       setNativeDanmakuSuppressed,
       setWebFullscreen,

@@ -342,11 +342,29 @@ button:disabled {
   transition: opacity 0.22s ease;
 }
 
+#tcdFloatingTrigger[hidden] {
+  display: none !important;
+}
+
 #player.tcd-show-trigger #tcdFloatingTrigger,
 #tcdFloatingTrigger:hover,
 #tcdFloatingTrigger:focus-within,
 #tcdFloatingTrigger[data-open="true"] {
   opacity: 1;
+}
+
+#tcdFloatingTrigger #tcdHideTriggerBtn {
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+#tcdFloatingTrigger #tcdHideTriggerBtn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 #tcdFloatingTrigger button {
@@ -1307,8 +1325,9 @@ button:disabled {
   line-height: 1.5;
 }
 
-/* First-visit anti-ghosting onboarding tip */
-#tcdOnboardingTip {
+/* First-visit anti-ghosting onboarding tip & update notification card */
+#tcdOnboardingTip,
+#tcdUpdateTip {
   position: absolute;
   right: 14px;
   bottom: 96px;
@@ -1324,7 +1343,8 @@ button:disabled {
   pointer-events: auto;
 }
 
-#tcdOnboardingTip[hidden] {
+#tcdOnboardingTip[hidden],
+#tcdUpdateTip[hidden] {
   display: none;
 }
 
@@ -1341,7 +1361,8 @@ button:disabled {
   color: #fff;
 }
 
-#tcdTipCloseX {
+#tcdTipCloseX,
+#tcdUpdateCloseX {
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -1350,7 +1371,8 @@ button:disabled {
   line-height: 1;
 }
 
-#tcdOnboardingBody {
+#tcdOnboardingBody,
+#tcdUpdateBody {
   margin: 0 0 10px;
   font-size: 12px;
   line-height: 1.55;

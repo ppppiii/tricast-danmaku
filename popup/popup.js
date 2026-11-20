@@ -5,9 +5,31 @@
   const store = stateApi.createStore();
   const $ = (id) => document.getElementById(id);
   let rooms = stateApi.sanitizeRooms(null);
+  let currentUpdate = null;
+
+  function renderUpdate(upd) {
+    currentUpdate = upd || null;
+    const banner = $('updateBanner');
+    if (!banner) return;
+    if (upd?.shouldNotify && upd?.latestVersion) {
+      $('updateBannerTitle').textContent = `✨ 发现新版本 v${upd.latestVersion}`;
+      $('updateBannerDesc').textContent = `${upd.releaseName || 'v' + upd.latestVersion} · 点击前往 GitHub 下载覆盖更新`;
+      banner.hidden = false;
+    } else {
+      banner.hidden = true;
+    }
+  }
 
   function renderSettings(s) {
-    $('showChat').checked = Boolean(s.showChat);
+    const enabled = Boolean(s.extensionEnabled);
+    $('extensionEnabled').checked = enabled;
+    const powerLabel = $('powerLabel');
+    if (powerLabel) {
+      powerLabel.textContent = enabled ? '已开启' : '已关闭';
+      powerLabel.classList.toggle('off', !enabled);
+    }
+    $('mainControls')?.classList.toggle('is-off', !enabled);
+
     $('danmakuTransparency').value = String(s.danmakuTransparency);
     $('danmakuTransparencyVal').textContent = s.danmakuTransparency + '%';
     $('danmakuSize').value = String(s.danmakuSize);
@@ -20,6 +42,8 @@
     $('danmakuMaxCountVal').textContent = s.danmakuMaxCount <= 0 ? '不限' : s.danmakuMaxCount + ' 条';
 
     for (const id of [
+      'showChat',
+      'showControlBar',
       'showChatFeed',
       'showPlatformBadge',
       'allowOverlap',
@@ -27,7 +51,7 @@
       'mergeRepeated',
       'mergeTextOnly',
     ]) {
-      $(id).checked = Boolean(s[id]);
+      if ($(id)) $(id).checked = Boolean(s[id]);
     }
 
     const textOnlyDisabled = !s.mergeRepeated;
@@ -62,7 +86,16 @@
   }
 
   function bind() {
-    $('showChat').addEventListener('change', (e) => store.update({ showChat: e.target.checked }));
+    try {
+      const ver = chrome?.runtime?.getManifest?.()?.version;
+      if (ver && $('versionLabel')) $('versionLabel').textContent = 'v' + ver;
+    } catch {}
+
+    $('extensionEnabled').addEventListener('change', (e) => {
+      store.update({ extensionEnabled: e.target.checked });
+      setTimeout(refreshStatus, 220);
+    });
+
     $('danmakuTransparency').addEventListener('input', (e) =>
       store.update({ danmakuTransparency: Number(e.target.value) }),
     );
@@ -78,6 +111,8 @@
     });
 
     for (const id of [
+      'showChat',
+      'showControlBar',
       'showChatFeed',
       'showPlatformBadge',
       'allowOverlap',
@@ -129,22 +164,79 @@
         window.close();
       }
     });
+
+    $('updateOpenBtn')?.addEventListener('click', () => {
+      const url =
+        currentUpdate?.releaseUrl || 'https://github.com/ppppiii/tricast-danmaku/releases/latest';
+      chrome.tabs?.create ? chrome.tabs.create({ url }) : window.open(url, '_blank', 'noopener');
+    });
+
+    $('updateDismissBtn')?.addEventListener('click', async () => {
+      if (!currentUpdate?.latestVersion) return;
+      try {
+        const res = await chrome.runtime.sendMessage({
+          type: 'tcd:dismiss-update',
+          version: currentUpdate.latestVersion,
+        });
+        renderUpdate(res?.update || null);
+      } catch {
+        $('updateBanner').hidden = true;
+      }
+    });
+
+    $('checkUpdateBtn')?.addEventListener('click', async () => {
+      const btn = $('checkUpdateBtn');
+      const stEl = $('updateCheckStatus');
+      if (btn) btn.disabled = true;
+      if (stEl) stEl.textContent = '检查中…';
+      try {
+        const res = await chrome.runtime.sendMessage({ type: 'tcd:get-update-info', force: true });
+        const upd = res?.update;
+        renderUpdate(upd);
+        if (stEl) {
+          if (upd?.error) {
+            stEl.textContent = '检查失败，请稍后重试';
+          } else if (upd?.hasUpdate) {
+            // If user manually clicked check update, show banner even if previously dismissed
+            renderUpdate({ ...upd, shouldNotify: true });
+            stEl.textContent = `有新版 v${upd.latestVersion}`;
+          } else {
+            stEl.textContent = '已是最新版本';
+          }
+        }
+      } catch {
+        if (stEl) stEl.textContent = '检查失败';
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
   }
 
   async function refreshStatus() {
     const statusEl = $('tabStatus');
+    const enabled = Boolean(store.get().extensionEnabled);
+
     try {
       const hub = await chrome.runtime.sendMessage({ type: 'tcd:get-hub-status' });
       if (hub?.statuses) renderHubStatus(hub.statuses);
+      if (hub?.update) renderUpdate(hub.update);
     } catch {}
 
+    if (!enabled) {
+      statusEl.className = 'off';
+      statusEl.textContent = '插件已关闭（点右上角开关随时启用）';
+      return;
+    }
+
     if (!chrome?.tabs?.query) {
+      statusEl.className = '';
       statusEl.textContent = '预览模式';
       return;
     }
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.url || !/^https:\/\/(?:live\.bilibili\.com|([^/]+\.)?kick\.com|(?:live|www)\.douyin\.com)\//i.test(tab.url)) {
+        statusEl.className = '';
         statusEl.textContent = '请打开 B站 / Kick / 抖音 直播间';
         $('openPlayerPanel').disabled = true;
         $('openRoomsPanelBtn').disabled = true;
@@ -156,14 +248,19 @@
         const siteNames = { bilibili: 'B站页', kick: 'Kick页', douyin: '抖音页' };
         const siteLabel = siteNames[res.siteInfo?.site] || '直播页';
         statusEl.textContent = `已挂载 (${siteLabel}) · 同屏 ${res.activeBullets} 条`;
+        $('openPlayerPanel').disabled = false;
+        $('openRoomsPanelBtn').disabled = false;
       } else if (res?.siteInfo && !res.siteInfo.room) {
+        statusEl.className = '';
         statusEl.textContent = '请进入 B站 / Kick / 抖音 直播间';
         $('openPlayerPanel').disabled = true;
         $('openRoomsPanelBtn').disabled = true;
       } else {
+        statusEl.className = '';
         statusEl.textContent = '等待播放器加载…';
       }
     } catch {
+      statusEl.className = '';
       statusEl.textContent = '刷新直播页后生效';
       $('openPlayerPanel').disabled = true;
       $('openRoomsPanelBtn').disabled = true;

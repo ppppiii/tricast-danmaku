@@ -6,8 +6,10 @@ import { createKickClient } from './kick-client.mjs';
 import { createDouyinClient } from './douyin-client.mjs';
 import { createTabSender } from './tab-sender.mjs';
 import { extractDouyinWebRid } from '../protocols/douyin-protocol.mjs';
+import { checkForUpdate, dismissUpdateVersion } from './update-checker.mjs';
 
 const ROOMS_STORAGE_KEY = 'tcd_rooms_v1';
+const SETTINGS_STORAGE_KEY = 'tcd_settings_v1';
 
 const DEFAULT_ROOMS = {
   presetId: '',
@@ -27,7 +29,46 @@ const ports = new Set();
 const seenIds = new Map(); // global LRU deduplication across reconnects
 const recentSelfSent = []; // { platform, normText, at }
 let currentRooms = structuredClone(DEFAULT_ROOMS);
+let extensionEnabled = true;
+let lastUpdateState = null;
 let idleStopTimer = 0;
+
+function getCurrentVersion() {
+  try {
+    return chrome.runtime.getManifest()?.version || '1.2.0';
+  } catch {
+    return '1.2.0';
+  }
+}
+
+function refreshActionBadge() {
+  if (!chrome?.action?.setBadgeText) return;
+  try {
+    if (!extensionEnabled) {
+      chrome.action.setBadgeText({ text: 'OFF' }).catch(() => {});
+      chrome.action.setBadgeBackgroundColor({ color: '#525866' }).catch(() => {});
+      return;
+    }
+    if (lastUpdateState?.shouldNotify) {
+      chrome.action.setBadgeText({ text: 'NEW' }).catch(() => {});
+      chrome.action.setBadgeBackgroundColor({ color: '#16a34a' }).catch(() => {});
+      return;
+    }
+    chrome.action.setBadgeText({ text: '' }).catch(() => {});
+  } catch {}
+}
+
+async function runUpdateCheck(force = false) {
+  lastUpdateState = await checkForUpdate({
+    currentVersion: getCurrentVersion(),
+    force,
+  });
+  refreshActionBadge();
+  if (extensionEnabled && lastUpdateState?.shouldNotify) {
+    broadcast({ type: 'tcd:update-available', update: lastUpdateState });
+  }
+  return lastUpdateState;
+}
 
 const streamState = {
   bilibili: { sig: '', runner: null, status: { platform: 'bilibili', room: '', state: 'idle', text: '未启用' } },
@@ -119,7 +160,7 @@ function syncStreams(forceRestart = false) {
   for (const platform of ['bilibili', 'kick', 'douyin']) {
     const entry = streamState[platform];
     const cfg = currentRooms[platform] || { enabled: false, room: '' };
-    const active = hasClients && Boolean(cfg.enabled) && Boolean(cfg.room);
+    const active = extensionEnabled && hasClients && Boolean(cfg.enabled) && Boolean(cfg.room);
     const nextSig = active ? `${platform}:${cfg.room}` : '';
 
     if (forceRestart || entry.sig !== nextSig) {
@@ -133,7 +174,7 @@ function syncStreams(forceRestart = false) {
           platform,
           room: cfg.room || '',
           state: 'idle',
-          text: cfg.room ? '已暂停' : '未配置',
+          text: !extensionEnabled ? '插件已关闭' : cfg.room ? '已暂停' : '未配置',
         });
         continue;
       }
@@ -216,7 +257,21 @@ async function setupHeaderRules() {
   }
 }
 
-const initPromise = Promise.all([loadRooms(), setupHeaderRules()]).then(() => syncStreams());
+async function loadExtensionEnabled() {
+  try {
+    const res = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+    const s = res?.[SETTINGS_STORAGE_KEY];
+    extensionEnabled = typeof s?.extensionEnabled === 'boolean' ? s.extensionEnabled : true;
+  } catch {
+    extensionEnabled = true;
+  }
+  refreshActionBadge();
+}
+
+const initPromise = Promise.all([loadRooms(), loadExtensionEnabled(), setupHeaderRules()]).then(() => {
+  syncStreams();
+  runUpdateCheck(false).catch(() => {});
+});
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
@@ -226,6 +281,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       ...(changes[ROOMS_STORAGE_KEY].newValue || {}),
     };
     syncStreams(false);
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, SETTINGS_STORAGE_KEY)) {
+    const nextSettings = changes[SETTINGS_STORAGE_KEY].newValue;
+    const nextEnabled =
+      typeof nextSettings?.extensionEnabled === 'boolean' ? nextSettings.extensionEnabled : true;
+    if (nextEnabled !== extensionEnabled) {
+      extensionEnabled = nextEnabled;
+      refreshActionBadge();
+      syncStreams(false);
+    }
   }
 });
 
@@ -243,6 +308,15 @@ chrome.runtime.onConnect.addListener((port) => {
     try {
       port.postMessage({ type: 'tcd:status', statuses: getStatusSnapshot(), rooms: currentRooms });
     } catch {}
+    runUpdateCheck(false)
+      .then((upd) => {
+        if (extensionEnabled && upd?.shouldNotify) {
+          try {
+            port.postMessage({ type: 'tcd:update-available', update: upd });
+          } catch {}
+        }
+      })
+      .catch(() => {});
   });
 
   port.onMessage.addListener((msg) => {
@@ -274,7 +348,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     switch (msg.type) {
       case 'tcd:get-hub-status':
-        return { ok: true, statuses: getStatusSnapshot(), rooms: currentRooms };
+        return {
+          ok: true,
+          enabled: extensionEnabled,
+          statuses: getStatusSnapshot(),
+          rooms: currentRooms,
+          update: lastUpdateState,
+        };
+
+      case 'tcd:get-update-info': {
+        const update = await runUpdateCheck(Boolean(msg.force));
+        return { ok: true, update };
+      }
+
+      case 'tcd:dismiss-update': {
+        lastUpdateState = await dismissUpdateVersion(msg.version, getCurrentVersion());
+        refreshActionBadge();
+        return { ok: true, update: lastUpdateState };
+      }
 
       case 'tcd:reconnect':
         syncStreams(true);

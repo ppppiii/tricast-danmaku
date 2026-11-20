@@ -414,3 +414,77 @@ test('submitKickLocalChat does not double-insert when Lexical execCommand return
   assert.equal(submitted, 'ABAB');
   assert.equal(beforeInputCount, 0);
 });
+
+test('v1.2.0 settings support extensionEnabled & showControlBar, and control bar drops web fullscreen', () => {
+  const def = state.sanitizeSettings(null);
+  assert.equal(def.extensionEnabled, true);
+  assert.equal(def.showControlBar, true);
+
+  const off = state.sanitizeSettings({ extensionEnabled: false, showControlBar: false });
+  assert.equal(off.extensionEnabled, false);
+  assert.equal(off.showControlBar, false);
+
+  const markup = panelUi.buildShadowMarkup();
+  assert.equal(markup.includes('tcdWebFullscreenBtn'), false);
+  assert.equal(markup.includes('tcdHideTriggerBtn'), true);
+  assert.equal(markup.includes('id="showControlBar"'), true);
+  assert.equal(markup.includes('id="tcdUpdateTip"'), true);
+});
+
+test('update-checker compares semver, caches checks, and respects dismissed versions', async () => {
+  const mod = await import('../src/background/update-checker.mjs');
+  assert.equal(mod.compareVersions('1.2.0', '1.1.3'), 1);
+  assert.equal(mod.compareVersions('v1.2.0', '1.2.0'), 0);
+  assert.equal(mod.compareVersions('1.1.9', '1.2.0'), -1);
+
+  const mem = {};
+  const fakeStorage = {
+    async get(k) {
+      return { [k]: mem[k] };
+    },
+    async set(obj) {
+      Object.assign(mem, obj);
+    },
+  };
+
+  let fetchCalls = 0;
+  const fakeFetch = async () => {
+    fetchCalls += 1;
+    return {
+      ok: true,
+      async json() {
+        return {
+          tag_name: 'v1.3.0',
+          name: 'TriCast v1.3.0',
+          html_url: 'https://github.com/ppppiii/tricast-danmaku/releases/tag/v1.3.0',
+        };
+      },
+    };
+  };
+
+  const first = await mod.checkForUpdate({
+    currentVersion: '1.2.0',
+    fetchImpl: fakeFetch,
+    storage: fakeStorage,
+    now: 1000000,
+  });
+  assert.equal(fetchCalls, 1);
+  assert.equal(first.hasUpdate, true);
+  assert.equal(first.shouldNotify, true);
+  assert.equal(first.latestVersion, '1.3.0');
+
+  // Cached within 12h: should NOT re-fetch
+  const cached = await mod.checkForUpdate({
+    currentVersion: '1.2.0',
+    fetchImpl: fakeFetch,
+    storage: fakeStorage,
+    now: 1000000 + 60 * 1000,
+  });
+  assert.equal(fetchCalls, 1);
+  assert.equal(cached.shouldNotify, true);
+
+  // Dismissing 1.3.0 suppresses notification
+  const dismissed = await mod.dismissUpdateVersion('1.3.0', '1.2.0', fakeStorage);
+  assert.equal(dismissed.hasUpdate, true);
+  assert.equal(dismissed.shouldNotify, false);
+});

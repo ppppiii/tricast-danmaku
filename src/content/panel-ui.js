@@ -25,8 +25,8 @@
     <button id="tcdTriggerToggle" type="button" aria-pressed="true" title="开关弹幕 (Alt+D)">弹幕 开</button>
     <button id="tcdFeedToggleBtn" type="button" aria-pressed="false" aria-controls="tcdChatFeed" title="三端实时聊天窗 (Alt+L)">📋 聊天窗</button>
     <button id="tcdSendToggleBtn" type="button" aria-expanded="false" aria-controls="tcdSendBar" title="跨平台发弹幕 (Alt+C)">💬 发弹幕</button>
-    <button id="tcdWebFullscreenBtn" type="button" aria-pressed="false" title="网页全屏">网页全屏</button>
     <button id="danmakuSettingsButton" type="button" aria-expanded="false" aria-controls="danmakuSettings" title="弹幕设置 (Alt+S)">⚙</button>
+    <button id="tcdHideTriggerBtn" type="button" aria-label="隐藏右下角设置条" title="隐藏右下角设置条 (Alt+B)">×</button>
   </div>
 
   <aside id="tcdChatFeed" aria-label="三端实时聊天窗" data-platform-badge="true" hidden>
@@ -134,6 +134,7 @@
 
     <div class="danmaku-toggles">
       <label><input id="showChat" type="checkbox" checked>开启弹幕</label>
+      <label><input id="showControlBar" type="checkbox" checked>显示右下角设置条</label>
       <label><input id="showChatFeed" type="checkbox">三端聊天窗 (Alt+L)</label>
       <label><input id="showPlatformBadge" type="checkbox" checked>显示来源角标 (B/K/抖)</label>
       <label><input id="allowOverlap" type="checkbox">满轨允许叠层</label>
@@ -154,7 +155,7 @@
     </div>
 
     <div class="danmaku-settings-footer">
-      <small>Alt+D 弹幕 · Alt+L 聊天窗 · Alt+C 发送 · Alt+S 设置</small>
+      <small>Alt+D 弹幕 · Alt+B 设置条 · Alt+L 聊天窗 · Alt+C 发送 · Alt+S 设置</small>
       <button id="resetDanmakuStyle" type="button">恢复默认</button>
     </div>
   </section>
@@ -275,6 +276,18 @@
     </div>
   </aside>
 
+  <aside id="tcdUpdateTip" role="dialog" aria-label="版本更新提示" hidden>
+    <div class="tcd-tip-head">
+      <strong id="tcdUpdateTitle">✨ TriCast 发现新版本</strong>
+      <button id="tcdUpdateCloseX" type="button" aria-label="关闭更新提示">×</button>
+    </div>
+    <p id="tcdUpdateBody"></p>
+    <div class="tcd-tip-actions">
+      <button id="tcdUpdateDismissBtn" type="button">忽略此版本</button>
+      <button id="tcdUpdateOpenBtn" type="button" class="primary">前往 GitHub 下载 ↗</button>
+    </div>
+  </aside>
+
   <div id="tcdToast" role="status" hidden></div>
 </div>`;
   }
@@ -302,6 +315,7 @@
       onRepeatFeed = async () => ({ ok: true }),
       onRevealTab = () => {},
       onDismissTip = () => {},
+      onDismissUpdate = () => {},
       onPanelToggle = () => {},
       onShowChatChange = () => {},
       onSuppressNativeChange = () => {},
@@ -325,10 +339,14 @@
     const replyBadge = $('tcdReplyBadge');
     const onboardingTip = $('tcdOnboardingTip');
     const onboardingBody = $('tcdOnboardingBody');
+    const updateTip = $('tcdUpdateTip');
+    const updateTitle = $('tcdUpdateTitle');
+    const updateBody = $('tcdUpdateBody');
 
     let toastTimer = 0;
     let activeSendTarget = 'bilibili';
     let replyContext = null;
+    let activeUpdateInfo = null;
 
     const PLAT_LABELS = { bilibili: 'B站', kick: 'Kick', douyin: '抖音' };
     const TIP_COPY = {
@@ -352,6 +370,25 @@
 
     function hideOnboardingTip() {
       if (onboardingTip) onboardingTip.hidden = true;
+    }
+
+    function showUpdateTip(update) {
+      if (!updateTip || !update?.shouldNotify || !update?.latestVersion) return;
+      // Do not overlap with first-visit onboarding tip
+      if (onboardingTip && !onboardingTip.hidden) return;
+      activeUpdateInfo = update;
+      if (updateTitle) {
+        updateTitle.textContent = `✨ TriCast 有新版本 v${update.latestVersion}`;
+      }
+      if (updateBody) {
+        const cur = update.currentVersion ? `当前 v${update.currentVersion}，` : '';
+        updateBody.textContent = `${cur}GitHub 已发布 ${update.releaseName || 'v' + update.latestVersion}。点击前往下载最新压缩包解压覆盖即可更新。`;
+      }
+      updateTip.hidden = false;
+    }
+
+    function hideUpdateTip() {
+      if (updateTip) updateTip.hidden = true;
     }
 
     function syncFeedEmptyState() {
@@ -624,6 +661,7 @@
 
       for (const key of [
         'showChat',
+        'showControlBar',
         'showChatFeed',
         'showPlatformBadge',
         'allowOverlap',
@@ -635,6 +673,10 @@
         'danmakuPlatformColors',
       ]) {
         if ($(key)) $(key).checked = Boolean(settings[key]);
+      }
+
+      if (trigger) {
+        trigger.hidden = !settings.showControlBar;
       }
 
       if (chatFeed) {
@@ -966,8 +1008,15 @@
         store.update({ textStroke: e.target.value }),
       );
 
+      $('tcdHideTriggerBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        store.update({ showControlBar: false });
+        notice('已隐藏右下角设置条（可在扩展弹窗或按 Alt+B 重新显示）');
+      });
+
       for (const key of [
         'showChat',
+        'showControlBar',
         'showChatFeed',
         'showPlatformBadge',
         'allowOverlap',
@@ -1078,7 +1127,27 @@
       });
       for (const evt of ['click', 'dblclick', 'pointerdown']) {
         onboardingTip?.addEventListener(evt, (e) => e.stopPropagation());
+        updateTip?.addEventListener(evt, (e) => e.stopPropagation());
       }
+
+      const dismissUpdate = (e) => {
+        e?.stopPropagation?.();
+        const ver = activeUpdateInfo?.latestVersion || '';
+        hideUpdateTip();
+        if (ver) onDismissUpdate(ver);
+      };
+      $('tcdUpdateDismissBtn')?.addEventListener('click', dismissUpdate);
+      $('tcdUpdateCloseX')?.addEventListener('click', (e) => {
+        e?.stopPropagation?.();
+        hideUpdateTip();
+      });
+      $('tcdUpdateOpenBtn')?.addEventListener('click', (e) => {
+        e?.stopPropagation?.();
+        const url =
+          activeUpdateInfo?.releaseUrl || 'https://github.com/ppppiii/tricast-danmaku/releases/latest';
+        window.open(url, '_blank', 'noopener');
+        hideUpdateTip();
+      });
 
       panel?.addEventListener('click', (e) => e.stopPropagation());
       panel?.addEventListener('dblclick', (e) => e.stopPropagation());
@@ -1105,6 +1174,8 @@
       clearChatFeed,
       showOnboardingTip,
       hideOnboardingTip,
+      showUpdateTip,
+      hideUpdateTip,
       notice,
     };
   }

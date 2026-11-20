@@ -3,7 +3,7 @@
 
   if (location.hash === '#tcd-bg-send') return;
   if (document.documentElement.hasAttribute('data-tcd-running')) return;
-  document.documentElement.setAttribute('data-tcd-running', '1.1.3');
+  document.documentElement.setAttribute('data-tcd-running', '1.2.0');
 
   const TCD = globalThis.__TCD__;
   if (!TCD) return;
@@ -221,6 +221,9 @@
       },
       onRevealTab: revealSendTab,
       onDismissTip: dismissCurrentSiteTip,
+      onDismissUpdate: (version) => {
+        chrome.runtime.sendMessage({ type: 'tcd:dismiss-update', version }).catch(() => {});
+      },
       onPanelToggle: (open) => {
         if (open) hostMount.wakeTrigger();
       },
@@ -231,14 +234,6 @@
         hostMount.setNativeDanmakuSuppressed(enabled);
       },
     });
-
-    const webFsBtn = shadowRoot.getElementById('tcdWebFullscreenBtn');
-    if (webFsBtn) {
-      webFsBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        hostMount.toggleWebFullscreen();
-      });
-    }
 
     const siteInfo = hostMount.getSiteInfo();
     if (SUPPORTED_SITES.includes(siteInfo.site)) {
@@ -327,11 +322,30 @@
   }
 
   function syncHubConnection() {
+    if (!store.get().extensionEnabled) {
+      disconnectHub();
+      return;
+    }
     const info = hostMount.getSiteInfo();
     if (SUPPORTED_SITES.includes(info.site) && info.room) {
       connectHub();
     } else {
       disconnectHub();
+    }
+  }
+
+  function syncExtensionEnabled(enabled) {
+    hostMount.setEnabled(enabled);
+    if (!enabled) {
+      disconnectHub();
+      danmakuLayout?.clearQueue();
+      shadowRoot?.getElementById('danmaku')?.replaceChildren();
+      danmakuActions?.close();
+      panelUi?.hideOnboardingTip();
+      panelUi?.hideUpdateTip();
+    } else {
+      syncSiteRoomOnNavigate();
+      syncHubConnection();
     }
   }
 
@@ -361,6 +375,9 @@
           rooms = TCD.state.sanitizeRooms(msg.rooms);
           panelUi?.populateRoomsDialog(rooms);
         }
+      } else if (msg.type === 'tcd:update-available' && msg.update?.shouldNotify) {
+        panelUi?.showUpdateTip(msg.update);
+        hostMount.wakeTrigger();
       }
     });
 
@@ -382,16 +399,10 @@
     },
     onResize: () => danmakuLayout?.layout(),
     onRouteChange: () => {
+      if (!store.get().extensionEnabled) return;
       syncSiteRoomOnNavigate();
       syncHubConnection();
       maybeShowSiteTip();
-    },
-    onWebFullscreenChange: (active) => {
-      const btn = shadowRoot?.getElementById('tcdWebFullscreenBtn');
-      if (btn) {
-        btn.setAttribute('aria-pressed', String(active));
-        btn.textContent = active ? '退出全屏' : '网页全屏';
-      }
     },
   });
 
@@ -427,8 +438,9 @@
       .catch(() => {});
   });
 
-  // Keyboard shortcuts: Alt+D toggle, Alt+L chat feed, Alt+S settings, Alt+C quick send
+  // Keyboard shortcuts: Alt+D toggle, Alt+B control bar, Alt+L chat feed, Alt+S settings, Alt+C quick send
   document.addEventListener('keydown', (e) => {
+    if (!store.get().extensionEnabled) return;
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const target = e.target;
     if (
@@ -447,6 +459,12 @@
         shadowRoot?.getElementById('danmaku')?.replaceChildren();
       }
       panelUi?.notice(next ? '已开启融合弹幕' : '已关闭融合弹幕');
+    } else if (code === 'KeyB') {
+      e.preventDefault();
+      const next = !store.get().showControlBar;
+      store.update({ showControlBar: next });
+      if (next) hostMount.wakeTrigger();
+      panelUi?.notice(next ? '已显示右下角设置条' : '已隐藏右下角设置条（按 Alt+B 可恢复）');
     } else if (code === 'KeyL') {
       e.preventDefault();
       hostMount.wakeTrigger();
@@ -469,16 +487,19 @@
       if (!msg || typeof msg !== 'object') return;
       if (msg.type === 'tcd:get-status') {
         sendResponse({
+          enabled: Boolean(store.get().extensionEnabled),
           mounted: Boolean(hostMount.getHost()?.isConnected),
           siteInfo: hostMount.getSiteInfo(),
           activeBullets: shadowRoot?.getElementById('danmaku')?.children.length || 0,
         });
       } else if (msg.type === 'tcd:open-settings') {
+        if (!store.get().extensionEnabled) store.update({ extensionEnabled: true });
         hostMount.syncMount();
         hostMount.wakeTrigger();
         panelUi?.openPanel(true);
         sendResponse({ ok: true });
       } else if (msg.type === 'tcd:open-rooms') {
+        if (!store.get().extensionEnabled) store.update({ extensionEnabled: true });
         hostMount.syncMount();
         hostMount.wakeTrigger();
         panelUi?.openRoomsDialog();
@@ -487,8 +508,21 @@
     });
   }
 
-  store.load().then(async () => {
-    await syncSiteRoomOnNavigate();
+  let lastEnabledState = true;
+  store.onChange((nextSettings) => {
+    const nextEnabled = Boolean(nextSettings.extensionEnabled);
+    if (nextEnabled !== lastEnabledState) {
+      lastEnabledState = nextEnabled;
+      syncExtensionEnabled(nextEnabled);
+    }
+  });
+
+  store.load().then(async (loadedSettings) => {
+    lastEnabledState = Boolean(loadedSettings.extensionEnabled);
+    hostMount.setEnabled(lastEnabledState);
+    if (lastEnabledState) {
+      await syncSiteRoomOnNavigate();
+    }
     hostMount.start();
     syncHubConnection();
   });

@@ -27,6 +27,8 @@
   ]);
 
   const DEFAULT_SETTINGS = Object.freeze({
+    extensionEnabled: true,
+    showControlBar: true,
     showChat: true,
     showChatFeed: false,
     showPlatformBadge: true,
@@ -241,6 +243,8 @@
     const out = { ...DEFAULT_SETTINGS };
 
     for (const key of [
+      'extensionEnabled',
+      'showControlBar',
       'showChat',
       'showChatFeed',
       'showPlatformBadge',
