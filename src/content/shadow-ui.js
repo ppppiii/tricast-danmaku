@@ -87,9 +87,12 @@ button:disabled {
 #danmaku .bullet {
   position: absolute;
   left: 0;
+  width: max-content;
   display: inline-flex;
   align-items: center;
   gap: 0.22em;
+  padding: 0 6px;
+  border-radius: 5px;
   white-space: nowrap;
   font-size: var(--danmaku-font-size, 22px);
   font-weight: var(--danmaku-font-weight, 400);
@@ -188,6 +191,7 @@ button:disabled {
 }
 
 #danmaku .bullet.danmaku-selected {
+  width: max-content;
   background: rgba(16, 24, 36, 0.84);
   border-radius: 5px;
   padding: 0 6px;

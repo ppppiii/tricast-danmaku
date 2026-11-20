@@ -195,7 +195,7 @@
 
       bullet.style.top = lane * g.line + 'px';
       bullet.style.minHeight = Math.max(g.line - 4, measuredHeight) + 'px';
-      bullet.style.width = width + 'px';
+      bullet.style.minWidth = width + 'px';
       bullet.style.setProperty('--from-x', startX + 'px');
       bullet.style.setProperty('--to-x', -width + 'px');
 
