@@ -28,6 +28,7 @@ const tabSender = createTabSender();
 const ports = new Set();
 const seenIds = new Map(); // global LRU deduplication across reconnects
 const recentSelfSent = []; // { platform, normText, at }
+const recentSelfShown = []; // { platform, normText, at, ttlMs } — prevents duplicate self-echo + WS echo
 let currentRooms = structuredClone(DEFAULT_ROOMS);
 let extensionEnabled = true;
 let lastUpdateState = null;
@@ -107,6 +108,30 @@ function consumeSelfSent(platform, msg) {
   return false;
 }
 
+function rememberSelfShown(platform, text, ttlMs = 3500) {
+  const normText = normSendText(text);
+  if (!normText) return;
+  const now = Date.now();
+  recentSelfShown.push({ platform, normText, at: now, ttlMs });
+  while (recentSelfShown.length > 30 || (recentSelfShown.length && now - recentSelfShown[0].at > 15000)) {
+    recentSelfShown.shift();
+  }
+}
+
+function consumeSelfShownDuplicate(platform, msg) {
+  const now = Date.now();
+  const cand = normSendText(msg.sendText || msg.text || '');
+  if (!cand) return false;
+  const idx = recentSelfShown.findIndex(
+    (x) => x.platform === platform && now - x.at <= x.ttlMs && x.normText === cand,
+  );
+  if (idx >= 0) {
+    recentSelfShown.splice(idx, 1);
+    return true;
+  }
+  return false;
+}
+
 function getStatusSnapshot() {
   return {
     bilibili: { ...streamState.bilibili.status },
@@ -141,6 +166,10 @@ function handleStreamEvent(ev) {
       ...m,
       isSelf: Boolean(m.isSelf || consumeSelfSent(m.platform, m)),
     };
+    if (enriched.isSelf) {
+      if (consumeSelfShownDuplicate(enriched.platform, enriched)) return;
+      rememberSelfShown(enriched.platform, enriched.sendText || enriched.text, 3000);
+    }
     broadcast({ type: 'tcd:danmaku', message: enriched });
   } else if (ev.kind === 'superchat' && ev.superchat) {
     const sc = ev.superchat;
@@ -427,6 +456,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (res.ok) {
             const selfId = res.receipt || 'self-bili-' + Date.now();
             if (res.receipt) seenIds.set(`bilibili:${res.receipt}`, Date.now());
+            rememberSelfShown('bilibili', text, 8000);
             broadcast({
               type: 'tcd:self-echo',
               message: {
