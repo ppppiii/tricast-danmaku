@@ -30,6 +30,7 @@
     extensionEnabled: true,
     showControlBar: true,
     showSuperChat: true,
+    scMaxDuration: 60,
     showChat: true,
     showChatFeed: false,
     showPlatformBadge: true,
@@ -280,6 +281,9 @@
     }
     if ([25, 50, 75, 100].includes(Number(src.danmakuArea))) {
       out.danmakuArea = Number(src.danmakuArea);
+    }
+    if ([0, 10, 15, 30, 60, 120, 300].includes(Number(src.scMaxDuration))) {
+      out.scMaxDuration = Number(src.scMaxDuration);
     }
     if (Number.isFinite(Number(src.lineHeightRatio))) {
       out.lineHeightRatio = clamp(Math.round(Number(src.lineHeightRatio) * 100) / 100, 1.05, 2.0);

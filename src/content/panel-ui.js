@@ -133,6 +133,19 @@
       </div>
     </div>
 
+    <div class="danmaku-setting-row">
+      <label for="scMaxDuration">SC 最长停留</label>
+      <select id="scMaxDuration">
+        <option value="10">10 秒</option>
+        <option value="15">15 秒</option>
+        <option value="30">30 秒</option>
+        <option value="60" selected>60 秒</option>
+        <option value="120">2 分钟</option>
+        <option value="300">5 分钟</option>
+        <option value="0">跟随原时长</option>
+      </select>
+    </div>
+
     <div class="danmaku-toggles">
       <label><input id="showChat" type="checkbox" checked>开启弹幕</label>
       <label><input id="showControlBar" type="checkbox" checked>显示右下角设置条</label>
@@ -456,7 +469,9 @@
 
       const doc = scOverlay.ownerDocument || document;
       const colors = resolveScColors(sc);
-      const displaySec = Math.max(15, Math.min(120, Number(sc.duration) || 60));
+      const maxSec = Number(store.get().scMaxDuration);
+      const rawSec = Math.max(10, Number(sc.duration) || 60);
+      const displaySec = maxSec > 0 ? Math.min(rawSec, maxSec) : rawSec;
 
       const card = doc.createElement('article');
       card.className = 'tcd-sc-card';
@@ -795,6 +810,7 @@
       if ($('lineHeightRatio')) $('lineHeightRatio').value = String(settings.lineHeightRatio);
       if ($('fontWeight')) $('fontWeight').value = String(settings.fontWeight);
       if ($('textStroke')) $('textStroke').value = String(settings.textStroke);
+      if ($('scMaxDuration')) $('scMaxDuration').value = String(settings.scMaxDuration);
 
       for (const key of [
         'showChat',
@@ -1147,6 +1163,9 @@
       );
       $('textStroke')?.addEventListener('change', (e) =>
         store.update({ textStroke: e.target.value }),
+      );
+      $('scMaxDuration')?.addEventListener('change', (e) =>
+        store.update({ scMaxDuration: Number(e.target.value) }),
       );
 
       $('tcdHideTriggerBtn')?.addEventListener('click', (e) => {
