@@ -123,7 +123,7 @@ export function createBiliClient({
 
   async function getDanmuConfig(roomInput) {
     await ensureBuvid();
-    await fetchNav();
+    const nav = await fetchNav(false).catch(() => ({ loggedIn: false, uid: 0, uname: '' }));
     const roomInfo = await resolveRealRoom(roomInput);
     const query = signWbi(
       { id: roomInfo.roomId, type: 0, web_location: '444.8' },
@@ -141,12 +141,14 @@ export function createBiliClient({
       if (!hosts.includes(entry.host)) hosts.push(entry.host);
     }
     if (!d.token || !hosts.length) throw new Error('B 站弹幕鉴权暂不可用');
-    const [uid, buvid] = await Promise.all([getCookie('DedeUserID'), getCookie('buvid3')]);
+    const [cookieUid, buvid] = await Promise.all([getCookie('DedeUserID'), getCookie('buvid3')]);
+    const selfUid = Number(cookieUid || nav?.uid || 0);
     return {
       room: roomInfo.roomId,
       token: d.token,
       hosts,
-      uid: Number(uid || 0),
+      uid: selfUid,
+      uname: String(nav?.uname || '').trim(),
       buvid: buvid || '',
     };
   }
@@ -351,9 +353,16 @@ export function createBiliClient({
                     if (connectedAt && normalized.message.createdAtMs < connectedAt - 10000) {
                       continue;
                     }
-                    // Tag messages sent by the logged-in Bilibili account (including native chat box)
-                    if (cfg.uid && String(normalized.message.uid) === String(cfg.uid)) {
+                    // Tag messages sent by the logged-in Bilibili account (including native chat box & mobile app)
+                    const uidMatch = cfg.uid && normalized.message.uid && String(normalized.message.uid) === String(cfg.uid);
+                    const nameMatch = cfg.uname && normalized.message.user && normalized.message.user === cfg.uname;
+                    if (uidMatch || nameMatch) {
                       normalized.message.isSelf = true;
+                    }
+                  } else if (normalized.kind === 'superchat' && normalized.superchat) {
+                    const sc = normalized.superchat;
+                    if (sc.createdAtMs + sc.duration * 1000 < Date.now() - 5000) {
+                      continue;
                     }
                   }
                   onEvent(normalized);

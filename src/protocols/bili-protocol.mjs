@@ -155,15 +155,18 @@ export function normalizeBiliCommand(body, receivedAt = Date.now()) {
     if (!Array.isArray(info)) return null;
 
     const text = String(info[1] || '').slice(0, 2000).trim();
-    const user = String(info[2]?.[1] || '观众').slice(0, 100).trim();
-    const uid = String(info[2]?.[0] || '');
+    const meta15 = asObj(info[0]?.[15]);
+    const metaUser = asObj(meta15.user);
+    const metaBase = asObj(metaUser.base);
+    const rawUid = info[2]?.[0] || metaUser.uid || '';
+    const uid = rawUid && String(rawUid) !== '0' ? String(rawUid) : '';
+    const user = String(info[2]?.[1] || metaBase.name || '观众').slice(0, 100).trim();
     const rgb = info[0]?.[3];
     const color =
       Number.isInteger(rgb) && rgb >= 0 && rgb <= 0xffffff
         ? '#' + rgb.toString(16).padStart(6, '0')
         : '';
 
-    const meta15 = asObj(info[0]?.[15]);
     const extra = asObj(meta15.extra);
     const idStr = String(extra.id_str || '').trim();
     const tsSecOrMs = Number(info[0]?.[4]);
@@ -215,6 +218,40 @@ export function normalizeBiliCommand(body, receivedAt = Date.now()) {
         hasMedia: hasEmote,
         hasGif: false,
         segments,
+        createdAtMs,
+        receivedAt,
+      },
+    };
+  }
+
+  if (cmd === 'SUPER_CHAT_MESSAGE' || cmd === 'SUPER_CHAT_MESSAGE_JPN') {
+    const id = String(data.id || '').trim();
+    const text = String(data.message || data.message_jpn || '').slice(0, 500).trim();
+    const price = Number(data.price || 0);
+    if (!text && !(price > 0)) return null;
+    const uinfo = asObj(data.user_info);
+    const uid = data.uid ? String(data.uid) : uinfo.uid ? String(uinfo.uid) : '';
+    const user = String(uinfo.uname || '观众').slice(0, 100).trim();
+    const avatar = safeBiliImageUrl(uinfo.face || '');
+    const duration = Math.max(15, Math.min(3600, Number(data.time) || 60));
+    const hex = (v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v.trim()) ? v.trim().toLowerCase() : '');
+    const headerColor = hex(data.background_price_color) || hex(data.background_color);
+    const bgColor = hex(data.background_bottom_color) || hex(data.background_price_color);
+    const startSec = Number(data.start_time || data.ts || 0);
+    const createdAtMs = startSec > 1e9 ? startSec * 1000 : receivedAt;
+    return {
+      kind: 'superchat',
+      superchat: {
+        platform: 'bilibili',
+        id: id || `sc:${uid}:${createdAtMs}:${price}`,
+        uid,
+        user,
+        avatar,
+        price,
+        text: text || `发送了 ¥${price} 醒目留言`,
+        duration,
+        headerColor,
+        bgColor,
         createdAtMs,
         receivedAt,
       },

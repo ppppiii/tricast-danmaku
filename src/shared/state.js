@@ -29,6 +29,7 @@
   const DEFAULT_SETTINGS = Object.freeze({
     extensionEnabled: true,
     showControlBar: true,
+    showSuperChat: true,
     showChat: true,
     showChatFeed: false,
     showPlatformBadge: true,
@@ -245,6 +246,7 @@
     for (const key of [
       'extensionEnabled',
       'showControlBar',
+      'showSuperChat',
       'showChat',
       'showChatFeed',
       'showPlatformBadge',

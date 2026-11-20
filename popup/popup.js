@@ -44,6 +44,7 @@
     for (const id of [
       'showChat',
       'showControlBar',
+      'showSuperChat',
       'showChatFeed',
       'showPlatformBadge',
       'allowOverlap',
@@ -113,6 +114,7 @@
     for (const id of [
       'showChat',
       'showControlBar',
+      'showSuperChat',
       'showChatFeed',
       'showPlatformBadge',
       'allowOverlap',

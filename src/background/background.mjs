@@ -142,6 +142,17 @@ function handleStreamEvent(ev) {
       isSelf: Boolean(m.isSelf || consumeSelfSent(m.platform, m)),
     };
     broadcast({ type: 'tcd:danmaku', message: enriched });
+  } else if (ev.kind === 'superchat' && ev.superchat) {
+    const sc = ev.superchat;
+    const dedupKey = sc.id ? `sc:${sc.platform}:${sc.id}` : '';
+    if (dedupKey) {
+      if (seenIds.has(dedupKey)) return;
+      seenIds.set(dedupKey, Date.now());
+      while (seenIds.size > 5000) {
+        seenIds.delete(seenIds.keys().next().value);
+      }
+    }
+    broadcast({ type: 'tcd:superchat', superchat: sc });
   } else if (ev.kind === 'delete' && Array.isArray(ev.ids)) {
     broadcast({ type: 'tcd:delete', ids: ev.ids });
   } else if (ev.kind === 'clear') {

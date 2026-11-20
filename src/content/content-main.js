@@ -3,7 +3,7 @@
 
   if (location.hash === '#tcd-bg-send') return;
   if (document.documentElement.hasAttribute('data-tcd-running')) return;
-  document.documentElement.setAttribute('data-tcd-running', '1.2.0');
+  document.documentElement.setAttribute('data-tcd-running', '1.2.1');
 
   const TCD = globalThis.__TCD__;
   if (!TCD) return;
@@ -324,6 +324,7 @@
   function handleMessageDeleted(ids) {
     if (!store.get().hideDeleted || !Array.isArray(ids)) return;
     panelUi?.removeChatFeedMessages(ids);
+    panelUi?.removeSuperChats?.(ids);
     if (!shadowRoot) return;
     const overlay = shadowRoot.getElementById('danmaku');
     if (!overlay) return;
@@ -334,9 +335,32 @@
     }
   }
 
+  function handleIncomingSuperChat(sc) {
+    if (!shadowRoot || !panelUi || !sc || typeof sc !== 'object') return;
+    if (chatBlocking?.isBlocked(sc) || chatRules?.blocked(sc)) return;
+    if (store.get().showSuperChat) {
+      panelUi.pushSuperChat(sc);
+    }
+    panelUi.appendChatFeed({
+      platform: sc.platform || 'bilibili',
+      id: `sc-${sc.id}`,
+      uid: sc.uid || '',
+      user: sc.user || '观众',
+      color: sc.headerColor || '',
+      text: `[SC ¥${sc.price || 0}] ${sc.text || ''}`,
+      sendText: sc.text || '',
+      hasMedia: false,
+      hasGif: false,
+      isSelf: false,
+      segments: [{ type: 'text', text: `[SC ¥${sc.price || 0}] ${sc.text || ''}` }],
+      receivedAt: sc.receivedAt || Date.now(),
+    });
+  }
+
   function handleChatClear() {
     if (!store.get().hideDeleted) return;
     panelUi?.clearChatFeed();
+    panelUi?.clearSuperChats?.();
     if (!shadowRoot) return;
     danmakuLayout?.clearQueue();
     shadowRoot.getElementById('danmaku')?.replaceChildren();
@@ -376,6 +400,7 @@
       danmakuActions?.close();
       panelUi?.hideOnboardingTip();
       panelUi?.hideUpdateTip();
+      panelUi?.clearSuperChats?.();
     } else {
       syncSiteRoomOnNavigate();
       syncHubConnection();
@@ -395,6 +420,8 @@
       if (!msg || typeof msg !== 'object') return;
       if (msg.type === 'tcd:danmaku' || msg.type === 'tcd:self-echo') {
         handleIncomingMessage(msg.message);
+      } else if (msg.type === 'tcd:superchat') {
+        handleIncomingSuperChat(msg.superchat);
       } else if (msg.type === 'tcd:delete') {
         handleMessageDeleted(msg.ids);
       } else if (msg.type === 'tcd:clear') {
@@ -473,12 +500,12 @@
 
   // Passive native chat submit watcher so messages sent from official B站/Kick/抖音 input boxes also get blue self-border
   const NATIVE_INPUT_SELECTORS = {
-    bilibili: ['.chat-input', '.chat-input-ctnr textarea', 'textarea.chat-input'],
+    bilibili: ['.chat-input', '.chat-input-ctnr textarea', 'textarea.chat-input', 'textarea[placeholder*="弹幕"]', '#control-panel-ctnr-box textarea'],
     kick: ['[data-testid="chat-input"]', '#chatroom-footer [contenteditable="true"]'],
     douyin: ['[data-e2e="chat-input"][contenteditable]', '[data-e2e="chat-input"] [contenteditable]', '.webcast-chatroom___textarea'],
   };
   const NATIVE_SEND_BTN_SELECTORS = {
-    bilibili: ['.bl-button--primary', '[data-report="send-danmaku"]', '.right-action button'],
+    bilibili: ['.bl-button--primary', '[data-report="send-danmaku"]', '.right-action button', '.chat-input-ctnr button'],
     kick: ['#send-message-button', '[data-testid="send-message-button"]'],
     douyin: ['[data-e2e="chat-send-button"]', '.webcast-chatroom___send-btn'],
   };

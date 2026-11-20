@@ -12,6 +12,7 @@
     return `
 <div id="player">
   <div id="danmaku" aria-label="三端融合弹幕" data-platform-badge="true"></div>
+  <div id="tcdSuperChatOverlay" aria-label="B站醒目留言"></div>
 
   <div id="tcdFloatingTrigger" data-open="false">
     <button id="tcdRoomsBtn" type="button" title="配置 B站 / Kick / 抖音 融合直播间">
@@ -135,6 +136,7 @@
     <div class="danmaku-toggles">
       <label><input id="showChat" type="checkbox" checked>开启弹幕</label>
       <label><input id="showControlBar" type="checkbox" checked>显示右下角设置条</label>
+      <label><input id="showSuperChat" type="checkbox" checked>显示 B站 SC</label>
       <label><input id="showChatFeed" type="checkbox">三端聊天窗 (Alt+L)</label>
       <label><input id="showPlatformBadge" type="checkbox" checked>显示来源角标 (B/K/抖)</label>
       <label><input id="allowOverlap" type="checkbox">满轨允许叠层</label>
@@ -342,11 +344,13 @@
     const updateTip = $('tcdUpdateTip');
     const updateTitle = $('tcdUpdateTitle');
     const updateBody = $('tcdUpdateBody');
+    const scOverlay = $('tcdSuperChatOverlay');
 
     let toastTimer = 0;
     let activeSendTarget = 'bilibili';
     let replyContext = null;
     let activeUpdateInfo = null;
+    const activeSuperChats = new Map(); // id -> { el, timer }
 
     const PLAT_LABELS = { bilibili: 'B站', kick: 'Kick', douyin: '抖音' };
     const TIP_COPY = {
@@ -389,6 +393,139 @@
 
     function hideUpdateTip() {
       if (updateTip) updateTip.hidden = true;
+    }
+
+    function hexToRgba(hex, alpha) {
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || '').trim());
+      if (!m) return '';
+      return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${alpha})`;
+    }
+
+    function resolveScColors(sc) {
+      const price = Number(sc?.price || 0);
+      let fallbackHeader = '#1f4a8c';
+      let fallbackBody = '#2a60b2';
+      if (price >= 2000) {
+        fallbackHeader = '#8e1328';
+        fallbackBody = '#ab1a32';
+      } else if (price >= 1000) {
+        fallbackHeader = '#b82e2e';
+        fallbackBody = '#e54d4d';
+      } else if (price >= 500) {
+        fallbackHeader = '#b86c1e';
+        fallbackBody = '#e09443';
+      } else if (price >= 100) {
+        fallbackHeader = '#b48a14';
+        fallbackBody = '#d4a31c';
+      } else if (price >= 50) {
+        fallbackHeader = '#2b6687';
+        fallbackBody = '#427d9e';
+      }
+      const headerHex = sc?.headerColor || fallbackHeader;
+      const bodyHex = sc?.bgColor || fallbackBody;
+      return {
+        header: hexToRgba(headerHex, 0.94) || 'rgba(31, 74, 140, 0.94)',
+        body: hexToRgba(bodyHex, 0.86) || 'rgba(42, 96, 178, 0.86)',
+      };
+    }
+
+    function dismissSuperChat(id) {
+      const entry = activeSuperChats.get(String(id));
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      entry.el?.remove?.();
+      activeSuperChats.delete(String(id));
+    }
+
+    function removeSuperChats(ids) {
+      if (!Array.isArray(ids)) return;
+      for (const id of ids) dismissSuperChat(id);
+    }
+
+    function clearSuperChats() {
+      for (const id of Array.from(activeSuperChats.keys())) {
+        dismissSuperChat(id);
+      }
+      scOverlay?.replaceChildren?.();
+    }
+
+    function pushSuperChat(sc) {
+      if (!scOverlay || !sc || typeof sc !== 'object') return;
+      const id = String(sc.id || Date.now());
+      if (activeSuperChats.has(id)) dismissSuperChat(id);
+
+      const doc = scOverlay.ownerDocument || document;
+      const colors = resolveScColors(sc);
+      const displaySec = Math.max(15, Math.min(120, Number(sc.duration) || 60));
+
+      const card = doc.createElement('article');
+      card.className = 'tcd-sc-card';
+      card.dataset.scId = id;
+      card.style.setProperty('--sc-header-surface', colors.header);
+      card.style.setProperty('--sc-body-surface', colors.body);
+      card.style.setProperty('--sc-duration', `${displaySec}s`);
+
+      const head = doc.createElement('div');
+      head.className = 'tcd-sc-head';
+
+      if (sc.avatar) {
+        const av = doc.createElement('img');
+        av.className = 'tcd-sc-avatar';
+        av.src = sc.avatar;
+        av.alt = '';
+        av.referrerPolicy = 'no-referrer';
+        av.addEventListener?.('error', () => av.remove?.(), { once: true });
+        head.appendChild(av);
+      }
+
+      const userEl = doc.createElement('span');
+      userEl.className = 'tcd-sc-user';
+      userEl.textContent = sc.user || '观众';
+      userEl.title = sc.uid ? `UID ${sc.uid}` : sc.user || '';
+
+      const priceEl = doc.createElement('strong');
+      priceEl.className = 'tcd-sc-price';
+      priceEl.textContent = `¥${sc.price || 0}`;
+
+      const closeBtn = doc.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'tcd-sc-close';
+      closeBtn.textContent = '×';
+      closeBtn.title = '关闭此条 SC';
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismissSuperChat(id);
+      });
+
+      head.append(userEl, priceEl, closeBtn);
+
+      const bodyBtn = doc.createElement('button');
+      bodyBtn.type = 'button';
+      bodyBtn.className = 'tcd-sc-body';
+      bodyBtn.textContent = sc.text || '';
+      bodyBtn.title = '点击展开 / 收起全文';
+      bodyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        card.classList.toggle('expanded');
+      });
+
+      const bar = doc.createElement('div');
+      bar.className = 'tcd-sc-progress';
+
+      card.append(head, bodyBtn, bar);
+      for (const evt of ['click', 'dblclick', 'pointerdown']) {
+        card.addEventListener(evt, (e) => e.stopPropagation());
+      }
+
+      scOverlay.appendChild(card);
+      const timer = setTimeout(() => dismissSuperChat(id), displaySec * 1000);
+      activeSuperChats.set(id, { el: card, timer });
+
+      // Keep at most 5 visible SC cards at once
+      while (activeSuperChats.size > 5) {
+        const oldestKey = activeSuperChats.keys().next().value;
+        dismissSuperChat(oldestKey);
+      }
     }
 
     function syncFeedEmptyState() {
@@ -662,6 +799,7 @@
       for (const key of [
         'showChat',
         'showControlBar',
+        'showSuperChat',
         'showChatFeed',
         'showPlatformBadge',
         'allowOverlap',
@@ -677,6 +815,9 @@
 
       if (trigger) {
         trigger.hidden = !settings.showControlBar;
+      }
+      if (scOverlay) {
+        scOverlay.hidden = !settings.showSuperChat;
       }
 
       if (chatFeed) {
@@ -1017,6 +1158,7 @@
       for (const key of [
         'showChat',
         'showControlBar',
+        'showSuperChat',
         'showChatFeed',
         'showPlatformBadge',
         'allowOverlap',
@@ -1176,6 +1318,9 @@
       hideOnboardingTip,
       showUpdateTip,
       hideUpdateTip,
+      pushSuperChat,
+      removeSuperChats,
+      clearSuperChats,
       notice,
     };
   }

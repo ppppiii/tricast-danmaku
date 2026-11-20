@@ -100,6 +100,31 @@ test('bili-protocol decodes protover=2 deflated DANMU_MSG with inline emotes and
   assert.equal(m2.hasMedia, true);
   assert.equal(m2.hasGif, true);
   assert.equal(m2.segments[0].type, 'sticker');
+
+  const scEv = normalizeBiliCommand(
+    {
+      cmd: 'SUPER_CHAT_MESSAGE',
+      data: {
+        id: 889900,
+        uid: 123456,
+        price: 50,
+        time: 120,
+        message: '老板大气！',
+        background_price_color: '#2b6687',
+        background_bottom_color: '#427d9e',
+        start_time: 1700000005,
+        user_info: { uname: '热心水友', face: 'https://i0.hdslb.com/bfs/face/test.jpg' },
+      },
+    },
+    1700000005500,
+  );
+  assert.equal(scEv.kind, 'superchat');
+  assert.equal(scEv.superchat.id, '889900');
+  assert.equal(scEv.superchat.price, 50);
+  assert.equal(scEv.superchat.user, '热心水友');
+  assert.equal(scEv.superchat.text, '老板大气！');
+  assert.equal(scEv.superchat.duration, 120);
+  assert.equal(scEv.superchat.avatar, 'https://i0.hdslb.com/bfs/face/test.jpg');
 });
 
 test('douyin-protocol decodes gzipped PushFrame ChatMessage + EmojiChatMessage + ack + HTML roomId', async () => {

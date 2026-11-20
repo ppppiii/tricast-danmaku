@@ -1401,6 +1401,152 @@ button:disabled {
   font-weight: 700;
 }
 
+/* Side-docked Bilibili SuperChat (醒目留言) overlay — FreeCast-style translucent cards */
+#tcdSuperChatOverlay {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 44;
+  width: 268px;
+  max-width: calc(100% - 28px);
+  max-height: calc(100% - 140px);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#tcdSuperChatOverlay[hidden] {
+  display: none;
+}
+
+.tcd-sc-card {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--sc-body-surface, rgba(42, 96, 178, 0.86));
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+  animation: tcd-sc-in 0.2s ease-out;
+}
+
+@keyframes tcd-sc-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tcd-sc-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  background: var(--sc-header-surface, rgba(31, 74, 140, 0.94));
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.tcd-sc-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tcd-sc-user {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.tcd-sc-price {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tcd-sc-close {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tcd-sc-close:hover {
+  background: rgba(0, 0, 0, 0.25);
+  color: #ffffff;
+}
+
+.tcd-sc-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  width: 100%;
+  padding: 7px 9px 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #ffffff;
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+
+.tcd-sc-card.expanded .tcd-sc-body {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
+.tcd-sc-body:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tcd-sc-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2.5px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.62);
+  transform-origin: left center;
+  animation: tcd-sc-timer var(--sc-duration, 60s) linear forwards;
+}
+
+@keyframes tcd-sc-timer {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
 /* Toast inside player */
 #tcdToast {
   position: absolute;
