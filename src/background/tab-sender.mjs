@@ -152,7 +152,7 @@ export function createTabSender(browser = chrome) {
       ) {
         return null;
       }
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 100));
     }
     return null;
   }
@@ -252,10 +252,10 @@ export function createTabSender(browser = chrome) {
       ).trim();
 
     let field = null;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 60; i++) {
       field = findInput();
       if (field) break;
-      await wait(350);
+      await wait(150);
     }
 
     if (!field) {
@@ -321,7 +321,7 @@ export function createTabSender(browser = chrome) {
       }
     }
 
-    await wait(140);
+    await wait(60);
     const btn = findSendBtn(field);
     if (
       btn &&
@@ -344,8 +344,8 @@ export function createTabSender(browser = chrome) {
       );
     }
 
-    for (let i = 0; i < 8; i++) {
-      await wait(180);
+    for (let i = 0; i < 12; i++) {
+      await wait(80);
       const toastText = Array.from(
         document.querySelectorAll('[role="alert"], .semi-toast-content, .toast, [class*="toast" i]'),
       )

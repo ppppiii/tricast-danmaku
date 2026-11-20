@@ -39,6 +39,8 @@
     img.className = isSticker ? 'chat-gif' : isZeroWidth ? 'chat-emote tcd-emote-zw' : 'chat-emote';
     img.alt = alt || '';
     img.decoding = 'async';
+    img.loading = 'eager';
+    img.fetchPriority = 'high';
     img.referrerPolicy = 'no-referrer';
     img.draggable = false;
     img.addEventListener?.(

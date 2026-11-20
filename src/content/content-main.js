@@ -274,18 +274,51 @@
     if (group) group.queued = true;
     chatRules?.attachBullet(group, bullet, message);
 
-    danmakuLayout.enqueue(bullet, {
-      onSpawn: (el) => {
-        if (group) group.queued = false;
-        danmakuActions?.attach(el, message);
-      },
-      onDrop: () => {
+    const launchBullet = () => {
+      if (!store.get().extensionEnabled || !store.get().showChat || document.hidden) {
         if (group) {
           group.queued = false;
           if (group.bullet === bullet) group.bullet = null;
         }
-      },
-    });
+        return;
+      }
+      danmakuLayout.enqueue(bullet, {
+        onSpawn: (el) => {
+          if (group) group.queued = false;
+          danmakuActions?.attach(el, message);
+        },
+        onDrop: () => {
+          if (group) {
+            group.queued = false;
+            if (group.bullet === bullet) group.bullet = null;
+          }
+        },
+      });
+    };
+
+    const pendingImgs = Array.from(bullet.querySelectorAll('img')).filter((img) => !img.complete);
+    if (!pendingImgs.length) {
+      launchBullet();
+    } else {
+      let launched = false;
+      const done = () => {
+        if (launched) return;
+        launched = true;
+        clearTimeout(waitTimer);
+        launchBullet();
+      };
+      const waitTimer = setTimeout(done, 420);
+      Promise.all(
+        pendingImgs.map(
+          (img) =>
+            new Promise((resolve) => {
+              if (img.complete) return resolve();
+              img.addEventListener('load', resolve, { once: true });
+              img.addEventListener('error', resolve, { once: true });
+            }),
+        ),
+      ).then(done);
+    }
   }
 
   function handleMessageDeleted(ids) {
@@ -437,6 +470,67 @@
       })
       .catch(() => {});
   });
+
+  // Passive native chat submit watcher so messages sent from official B站/Kick/抖音 input boxes also get blue self-border
+  const NATIVE_INPUT_SELECTORS = {
+    bilibili: ['.chat-input', '.chat-input-ctnr textarea', 'textarea.chat-input'],
+    kick: ['[data-testid="chat-input"]', '#chatroom-footer [contenteditable="true"]'],
+    douyin: ['[data-e2e="chat-input"][contenteditable]', '[data-e2e="chat-input"] [contenteditable]', '.webcast-chatroom___textarea'],
+  };
+  const NATIVE_SEND_BTN_SELECTORS = {
+    bilibili: ['.bl-button--primary', '[data-report="send-danmaku"]', '.right-action button'],
+    kick: ['#send-message-button', '[data-testid="send-message-button"]'],
+    douyin: ['[data-e2e="chat-send-button"]', '.webcast-chatroom___send-btn'],
+  };
+
+  function captureNativeSelfSend(site, explicitEl = null) {
+    if (!store.get().extensionEnabled || !SUPPORTED_SITES.includes(site)) return;
+    let field = explicitEl;
+    if (!field) {
+      for (const sel of NATIVE_INPUT_SELECTORS[site] || []) {
+        const hit = document.querySelector(sel);
+        if (hit) {
+          field = hit;
+          break;
+        }
+      }
+    }
+    if (!field) return;
+    const raw =
+      'value' in field && (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT')
+        ? field.value
+        : field.innerText || field.textContent || '';
+    const clean = String(raw || '').replace(/\u200B/g, '').trim();
+    if (!clean || clean.length > 200) return;
+    chrome.runtime.sendMessage({ type: 'tcd:remember-self', platform: site, text: clean }).catch(() => {});
+  }
+
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      const target = e.target;
+      if (!target || (!target.isContentEditable && target.tagName !== 'TEXTAREA' && target.tagName !== 'INPUT')) return;
+      const { site } = hostMount.getSiteInfo();
+      const sels = NATIVE_INPUT_SELECTORS[site];
+      if (sels && sels.some((sel) => target.matches?.(sel) || target.closest?.(sel))) {
+        captureNativeSelfSend(site, target);
+      }
+    },
+    true,
+  );
+
+  document.addEventListener(
+    'pointerdown',
+    (e) => {
+      const { site } = hostMount.getSiteInfo();
+      const sels = NATIVE_SEND_BTN_SELECTORS[site];
+      if (sels && sels.some((sel) => e.target?.closest?.(sel))) {
+        captureNativeSelfSend(site);
+      }
+    },
+    true,
+  );
 
   // Keyboard shortcuts: Alt+D toggle, Alt+B control bar, Alt+L chat feed, Alt+S settings, Alt+C quick send
   document.addEventListener('keydown', (e) => {

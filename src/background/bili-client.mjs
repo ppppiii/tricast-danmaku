@@ -12,6 +12,8 @@ export function createBiliClient({
 } = {}) {
   let wbiImages = null;
   let buvidPromise = null;
+  let navCache = null;
+  const roomCache = new Map();
   let lastSendAt = 0;
   let sending = false;
 
@@ -73,7 +75,10 @@ export function createBiliClient({
     return json;
   }
 
-  async function fetchNav() {
+  async function fetchNav(force = false) {
+    if (!force && navCache && Date.now() - navCache.at < 5 * 60 * 1000 && wbiImages) {
+      return navCache.value;
+    }
     const res = await fetchFn('https://api.bilibili.com/x/web-interface/nav', {
       credentials: 'include',
       redirect: 'error',
@@ -83,27 +88,37 @@ export function createBiliClient({
     const json = await res.json();
     if (json.data?.wbi_img) wbiImages = json.data.wbi_img;
     if (json.code === -101 || json.data?.isLogin === false) {
-      return { loggedIn: false, uid: 0, uname: '' };
+      const value = { loggedIn: false, uid: 0, uname: '' };
+      navCache = { value, at: Date.now() };
+      return value;
     }
-    return {
+    const value = {
       loggedIn: json.data?.isLogin === true,
       uid: Number(json.data?.mid || 0),
       uname: String(json.data?.uname || ''),
     };
+    navCache = { value, at: Date.now() };
+    return value;
   }
 
-  async function resolveRealRoom(roomInput) {
+  async function resolveRealRoom(roomInput, useCache = false) {
     const id = String(roomInput || '').trim();
     if (!/^\d+$/.test(id) || Number(id) <= 0) throw new Error('B 站房间号无效');
+    if (useCache) {
+      const hit = roomCache.get(id);
+      if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.value;
+    }
     const json = await apiJson(`https://api.live.bilibili.com/room/v1/Room/get_info?room_id=${id}`);
     const d = json.data || {};
-    return {
+    const value = {
       roomId: Number(d.room_id || id),
       shortId: Number(d.short_id || 0),
       uid: Number(d.uid || 0),
       title: String(d.title || ''),
       liveStatus: Number(d.live_status || 0),
     };
+    roomCache.set(id, { value, at: Date.now() });
+    return value;
   }
 
   async function getDanmuConfig(roomInput) {
@@ -153,15 +168,16 @@ export function createBiliClient({
     sending = true;
     try {
       await ensureBuvid();
-      const account = await fetchNav();
+      const account = await fetchNav(false);
       if (!account.loggedIn) {
+        navCache = null;
         return { ok: false, error: '请先在浏览器登录 B 站后再发送' };
       }
       const csrf = await getCookie('bili_jct');
       if (!csrf) {
         return { ok: false, error: 'B 站登录态缺失（bili_jct），请刷新 B 站页面登录' };
       }
-      const roomInfo = await resolveRealRoom(roomInput);
+      const roomInfo = await resolveRealRoom(roomInput, true);
       const body = new FormData();
       const fields = {
         bubble: '0',
@@ -334,6 +350,10 @@ export function createBiliClient({
                     // Drop any stale persisted message timestamped well before WebSocket connected
                     if (connectedAt && normalized.message.createdAtMs < connectedAt - 10000) {
                       continue;
+                    }
+                    // Tag messages sent by the logged-in Bilibili account (including native chat box)
+                    if (cfg.uid && String(normalized.message.uid) === String(cfg.uid)) {
+                      normalized.message.isSelf = true;
                     }
                   }
                   onEvent(normalized);
