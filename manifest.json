@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TriCast 三端融合弹幕 (B站 · Kick · 抖音)",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "在 B 站、Kick、抖音任意直播间主界面实时融合三端飘屏弹幕与三端聊天窗（含表情/GIF），支持来源角标切换、跨端发送与 +1。",
   "icons": {
     "16": "icons/icon-16.png",
