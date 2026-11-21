@@ -89,6 +89,7 @@ export async function checkForUpdate({
     const res = await fetchImpl(REPO_RELEASES_API, {
       headers: { Accept: 'application/vnd.github+json' },
       cache: 'no-store',
+      signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(10000) : undefined,
     });
     if (!res.ok) {
       return { ...computeUpdateState(currentVersion, prev), error: `HTTP ${res.status}` };

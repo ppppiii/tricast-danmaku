@@ -147,12 +147,8 @@
       const laneSpan = Math.max(1, Number(el.dataset.laneSpan) || 1);
       selected = { el, message, lane, laneSpan };
 
-      for (const other of overlay.children) {
-        if (lanesOverlap(other, lane, laneSpan)) {
-          other.classList.add('danmaku-held');
-        }
-      }
-      el.classList.add('danmaku-selected');
+      // Pause only the hovered/selected bullet so other bullets on the same row keep flowing smoothly
+      el.classList.add('danmaku-held', 'danmaku-selected');
       menu.hidden = false;
       setStatus('');
 
