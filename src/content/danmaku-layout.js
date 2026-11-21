@@ -129,8 +129,7 @@
 
       const overlayRect = overlay.getBoundingClientRect();
       const origin = overlayRect.left;
-      const gap = Math.max(48, settings.danmakuSize * 2.2) * (100 / density);
-      const maxPerLane = Math.max(2, Math.min(4, Math.round((4 * density) / 75)));
+      const gap = Math.max(56, settings.danmakuSize * 2.6) * (100 / density);
       const heldLane = getHeldLane();
       const children = Array.from(overlay.children).filter((el) => el !== bullet);
 
@@ -138,7 +137,7 @@
       let bestFallbackLane;
       let bestFallbackMaxRight = Infinity;
 
-      // Bilibili-native top-down greedy lane packing with comfortable breathing gap and max 4 bullets per row.
+      // Bilibili-native top-down greedy lane packing with natural horizontal breathing gap (no hard per-row cap).
       for (let lane = 0; lane <= maxStartLane; lane++) {
         const endLane = lane + span - 1;
 
@@ -156,7 +155,7 @@
           if (rightRel > maxRight) maxRight = rightRel;
         }
 
-        if (blockers.length < maxPerLane && maxRight <= g.width - gap) {
+        if (maxRight <= g.width - gap) {
           available = lane;
           break;
         }
